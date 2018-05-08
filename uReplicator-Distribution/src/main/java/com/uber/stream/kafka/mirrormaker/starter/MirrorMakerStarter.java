@@ -16,10 +16,11 @@
 package com.uber.stream.kafka.mirrormaker.starter;
 
 import com.uber.stream.kafka.mirrormaker.controller.ControllerStarter;
-import java.util.Arrays;
 import kafka.mirrormaker.MirrorMakerWorker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Arrays;
 
 /**
  * This is the entry point to start mirror maker controller and worker.
@@ -28,25 +29,29 @@ import org.slf4j.LoggerFactory;
  * - startMirrorMakerWorker means to start a worker
  * The following parameters are for each module separately.
  */
+// TODO: 2018/5/2 by zmyer
 public class MirrorMakerStarter {
+    //日志
+    private static final Logger LOGGER = LoggerFactory.getLogger(MirrorMakerStarter.class);
 
-  private static final Logger LOGGER = LoggerFactory.getLogger(MirrorMakerStarter.class);
-
-  public static void main(String[] args) throws Exception {
-    if (args.length > 1) {
-      if (args[0].equalsIgnoreCase("startMirrorMakerController")) {
-        LOGGER.info("Trying to start MirrorMaker Controller with args: {}", Arrays.toString(args));
-        ControllerStarter.main(args);
-      } else if (args[0].equalsIgnoreCase("startMirrorMakerWorker")) {
-        LOGGER.info("Trying to start MirrorMaker Worker with args: {}", Arrays.toString(args));
-        new MirrorMakerWorker().main(args);
-      } else {
-        LOGGER.error("Start script should provide the module(startMirrorMakerController/startMirrorMakerWorker)"
-            + " to start as the first parameter! Current args: {}", Arrays.toString(args));
-      }
-    } else {
-      LOGGER.error("Start script doesn't provide enough parameters! Current args: {}.", Arrays.toString(args));
+    // TODO: 2018/5/2 by zmyer
+    public static void main(String[] args) throws Exception {
+        if (args.length > 1) {
+            if (args[0].equalsIgnoreCase("startMirrorMakerController")) {
+                LOGGER.info("Trying to start MirrorMaker Controller with args: {}", Arrays.toString(args));
+                //启动控制器
+                ControllerStarter.main(args);
+            } else if (args[0].equalsIgnoreCase("startMirrorMakerWorker")) {
+                LOGGER.info("Trying to start MirrorMaker Worker with args: {}", Arrays.toString(args));
+                //启动工作进程
+                new MirrorMakerWorker().main(args);
+            } else {
+                LOGGER.error("Start script should provide the module(startMirrorMakerController/startMirrorMakerWorker)"
+                        + " to start as the first parameter! Current args: {}", Arrays.toString(args));
+            }
+        } else {
+            LOGGER.error("Start script doesn't provide enough parameters! Current args: {}.", Arrays.toString(args));
+        }
     }
-  }
 
 }

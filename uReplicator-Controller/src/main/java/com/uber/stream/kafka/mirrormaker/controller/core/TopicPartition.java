@@ -24,48 +24,49 @@ import com.alibaba.fastjson.JSONObject;
  *
  * @author xiangfu
  */
+// TODO: 2018/5/2 by zmyer
 public class TopicPartition {
 
-  private final String _topic;
-  private final int _partition;
+    private final String _topic;
+    private final int _partition;
 
-  public TopicPartition(String topic, int numPartitions) {
-    _topic = topic;
-    _partition = numPartitions;
-  }
-
-  /**
-   * This is used only for POST and PUT call to create the pojo.
-   */
-  public static TopicPartition init(String jsonRequest) {
-    JSONObject jsonObject = JSON.parseObject(jsonRequest);
-    if (!jsonObject.containsKey("topic")) {
-      throw new RuntimeException("Cannot initialize TopicPartitionInfo, missing field: topic");
+    public TopicPartition(String topic, int numPartitions) {
+        _topic = topic;
+        _partition = numPartitions;
     }
-    if (!jsonObject.containsKey("numPartitions")) {
-      throw new RuntimeException(
-          "Cannot initialize TopicPartitionInfo, missing field: numPartitions");
+
+    /**
+     * This is used only for POST and PUT call to create the pojo.
+     */
+    public static TopicPartition init(String jsonRequest) {
+        JSONObject jsonObject = JSON.parseObject(jsonRequest);
+        if (!jsonObject.containsKey("topic")) {
+            throw new RuntimeException("Cannot initialize TopicPartitionInfo, missing field: topic");
+        }
+        if (!jsonObject.containsKey("numPartitions")) {
+            throw new RuntimeException(
+                    "Cannot initialize TopicPartitionInfo, missing field: numPartitions");
+        }
+        return new TopicPartition(jsonObject.getString("topic"),
+                jsonObject.getIntValue("numPartitions"));
     }
-    return new TopicPartition(jsonObject.getString("topic"),
-        jsonObject.getIntValue("numPartitions"));
-  }
 
-  public int getPartition() {
-    return _partition;
-  }
+    public int getPartition() {
+        return _partition;
+    }
 
-  public String getTopic() {
-    return _topic;
-  }
+    public String getTopic() {
+        return _topic;
+    }
 
-  public String toString() {
-    return String.format("{topic: %s, partition: %s}", _topic, _partition);
-  }
+    public String toString() {
+        return String.format("{topic: %s, partition: %s}", _topic, _partition);
+    }
 
-  public JSONObject toJSON() {
-    JSONObject jsonObject = new JSONObject();
-    jsonObject.put("topic", _topic);
-    jsonObject.put("numPartitions", _partition);
-    return jsonObject;
-  }
+    public JSONObject toJSON() {
+        JSONObject jsonObject = new JSONObject();
+        jsonObject.put("topic", _topic);
+        jsonObject.put("numPartitions", _partition);
+        return jsonObject;
+    }
 }

@@ -19,13 +19,6 @@ import com.google.common.collect.ImmutableList;
 import com.uber.stream.kafka.mirrormaker.controller.core.InstanceTopicPartitionHolder;
 import com.uber.stream.kafka.mirrormaker.controller.core.OnlineOfflineStateModel;
 import com.uber.stream.kafka.mirrormaker.controller.core.TopicPartition;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.PriorityQueue;
-import java.util.Set;
 import org.apache.commons.lang.StringUtils;
 import org.apache.helix.HelixAdmin;
 import org.apache.helix.HelixDataAccessor;
@@ -39,127 +32,148 @@ import org.apache.helix.model.IdealState;
 import org.apache.helix.model.builder.CustomModeISBuilder;
 import org.apache.helix.store.zk.ZkHelixPropertyStore;
 
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.PriorityQueue;
+import java.util.Set;
+
+// TODO: 2018/5/2 by zmyer
 public class HelixUtils {
 
-  public static String getAbsoluteZkPathForHelix(String zkBaseUrl) {
-    zkBaseUrl = StringUtils.chomp(zkBaseUrl, "/");
-    return zkBaseUrl;
-  }
+    public static String getAbsoluteZkPathForHelix(String zkBaseUrl) {
+        zkBaseUrl = StringUtils.chomp(zkBaseUrl, "/");
+        return zkBaseUrl;
+    }
 
-  public static ZkHelixPropertyStore<ZNRecord> getZkPropertyStore(HelixManager helixManager,
-      String clusterName) {
-    ZkBaseDataAccessor<ZNRecord> baseAccessor =
-        (ZkBaseDataAccessor<ZNRecord>) helixManager.getHelixDataAccessor().getBaseDataAccessor();
-    String propertyStorePath = PropertyPathConfig.getPath(PropertyType.PROPERTYSTORE, clusterName);
+    public static ZkHelixPropertyStore<ZNRecord> getZkPropertyStore(HelixManager helixManager,
+            String clusterName) {
+        ZkBaseDataAccessor<ZNRecord> baseAccessor =
+                (ZkBaseDataAccessor<ZNRecord>) helixManager.getHelixDataAccessor().getBaseDataAccessor();
+        String propertyStorePath = PropertyPathConfig.getPath(PropertyType.PROPERTYSTORE, clusterName);
 
-    ZkHelixPropertyStore<ZNRecord> propertyStore = new ZkHelixPropertyStore<ZNRecord>(baseAccessor,
-        propertyStorePath, Arrays.asList(propertyStorePath));
+        ZkHelixPropertyStore<ZNRecord> propertyStore = new ZkHelixPropertyStore<ZNRecord>(baseAccessor,
+                propertyStorePath, Arrays.asList(propertyStorePath));
 
-    return propertyStore;
-  }
+        return propertyStore;
+    }
 
-  public static List<String> liveInstances(HelixManager helixManager) {
-    HelixDataAccessor helixDataAccessor = helixManager.getHelixDataAccessor();
-    PropertyKey liveInstancesKey = helixDataAccessor.keyBuilder().liveInstances();
-    return ImmutableList.copyOf(helixDataAccessor.getChildNames(liveInstancesKey));
-  }
+    // TODO: 2018/5/2 by zmyer
+    public static List<String> liveInstances(HelixManager helixManager) {
+        //获取集群数据访问对象
+        HelixDataAccessor helixDataAccessor = helixManager.getHelixDataAccessor();
+        //获取存活实体的键对象
+        PropertyKey liveInstancesKey = helixDataAccessor.keyBuilder().liveInstances();
+        //获取键对象下的所有的实体集合
+        return ImmutableList.copyOf(helixDataAccessor.getChildNames(liveInstancesKey));
+    }
 
-  /**
-   * From IdealStates.
-   *
-   * @return InstanceToNumTopicPartitionMap
-   */
-  public static Map<String, Set<TopicPartition>> getInstanceToTopicPartitionsMap(
-      HelixManager helixManager) {
-    Map<String, Set<TopicPartition>> instanceToNumTopicPartitionMap =
-        new HashMap<String, Set<TopicPartition>>();
-    HelixAdmin helixAdmin = helixManager.getClusterManagmentTool();
-    String helixClusterName = helixManager.getClusterName();
-    for (String topic : helixAdmin.getResourcesInCluster(helixClusterName)) {
-      IdealState is = helixAdmin.getResourceIdealState(helixClusterName, topic);
-      for (String partition : is.getPartitionSet()) {
-        TopicPartition tpi = new TopicPartition(topic, Integer.parseInt(partition));
-        for (String instance : is.getInstanceSet(partition)) {
-          if (!instanceToNumTopicPartitionMap.containsKey(instance)) {
-            instanceToNumTopicPartitionMap.put(instance, new HashSet<TopicPartition>());
-          }
-          instanceToNumTopicPartitionMap.get(instance).add(tpi);
+    /**
+     * From IdealStates.
+     *
+     * @return InstanceToNumTopicPartitionMap
+     */
+    // TODO: 2018/5/2 by zmyer
+    public static Map<String, Set<TopicPartition>> getInstanceToTopicPartitionsMap(
+            HelixManager helixManager) {
+        Map<String, Set<TopicPartition>> instanceToNumTopicPartitionMap =
+                new HashMap<String, Set<TopicPartition>>();
+        //读取helix管理器
+        HelixAdmin helixAdmin = helixManager.getClusterManagmentTool();
+        //读取helix集群名称
+        String helixClusterName = helixManager.getClusterName();
+        for (String topic : helixAdmin.getResourcesInCluster(helixClusterName)) {
+            //根据集群名称和topic信息，获取具体的实例的状态信息
+            IdealState is = helixAdmin.getResourceIdealState(helixClusterName, topic);
+            for (String partition : is.getPartitionSet()) {
+                //创建topic分区对象
+                TopicPartition tpi = new TopicPartition(topic, Integer.parseInt(partition));
+                for (String instance : is.getInstanceSet(partition)) {
+                    if (!instanceToNumTopicPartitionMap.containsKey(instance)) {
+                        //创建实体对应的topic分区列表
+                        instanceToNumTopicPartitionMap.put(instance, new HashSet<TopicPartition>());
+                    }
+                    //将对应的分区信息插入到实体对应的分区列表中
+                    instanceToNumTopicPartitionMap.get(instance).add(tpi);
+                }
+            }
         }
-      }
+        //返回结果
+        return instanceToNumTopicPartitionMap;
     }
-    return instanceToNumTopicPartitionMap;
-  }
 
-  public static IdealState buildCustomIdealStateFor(String topicName,
-      int numTopicPartitions,
-      PriorityQueue<InstanceTopicPartitionHolder> instanceToNumServingTopicPartitionMap) {
+    public static IdealState buildCustomIdealStateFor(String topicName,
+            int numTopicPartitions,
+            PriorityQueue<InstanceTopicPartitionHolder> instanceToNumServingTopicPartitionMap) {
 
-    final CustomModeISBuilder customModeIdealStateBuilder = new CustomModeISBuilder(topicName);
+        final CustomModeISBuilder customModeIdealStateBuilder = new CustomModeISBuilder(topicName);
 
-    customModeIdealStateBuilder
-        .setStateModel(OnlineOfflineStateModel.name)
-        .setNumPartitions(numTopicPartitions).setNumReplica(1)
-        .setMaxPartitionsPerNode(numTopicPartitions);
+        customModeIdealStateBuilder
+                .setStateModel(OnlineOfflineStateModel.name)
+                .setNumPartitions(numTopicPartitions).setNumReplica(1)
+                .setMaxPartitionsPerNode(numTopicPartitions);
 
-    for (int i = 0; i < numTopicPartitions; ++i) {
-      synchronized (instanceToNumServingTopicPartitionMap) {
-        InstanceTopicPartitionHolder liveInstance = instanceToNumServingTopicPartitionMap.poll();
-        customModeIdealStateBuilder.assignInstanceAndState(Integer.toString(i),
-            liveInstance.getInstanceName(), "ONLINE");
-        liveInstance.addTopicPartition(new TopicPartition(topicName, i));
-        instanceToNumServingTopicPartitionMap.add(liveInstance);
-      }
-    }
-    return customModeIdealStateBuilder.build();
-  }
-
-  public static Map<String, IdealState> getIdealStatesFromAssignment(
-      Set<InstanceTopicPartitionHolder> newAssignment) {
-    Map<String, CustomModeISBuilder> idealStatesBuilderMap =
-        new HashMap<String, CustomModeISBuilder>();
-    for (InstanceTopicPartitionHolder instance : newAssignment) {
-      for (TopicPartition tpi : instance.getServingTopicPartitionSet()) {
-        String topicName = tpi.getTopic();
-        String partition = Integer.toString(tpi.getPartition());
-        if (!idealStatesBuilderMap.containsKey(topicName)) {
-          final CustomModeISBuilder customModeIdealStateBuilder =
-              new CustomModeISBuilder(topicName);
-          customModeIdealStateBuilder
-              .setStateModel(OnlineOfflineStateModel.name)
-              .setNumReplica(1);
-
-          idealStatesBuilderMap.put(topicName, customModeIdealStateBuilder);
+        for (int i = 0; i < numTopicPartitions; ++i) {
+            synchronized (instanceToNumServingTopicPartitionMap) {
+                InstanceTopicPartitionHolder liveInstance = instanceToNumServingTopicPartitionMap.poll();
+                customModeIdealStateBuilder.assignInstanceAndState(Integer.toString(i),
+                        liveInstance.getInstanceName(), "ONLINE");
+                liveInstance.addTopicPartition(new TopicPartition(topicName, i));
+                instanceToNumServingTopicPartitionMap.add(liveInstance);
+            }
         }
-        idealStatesBuilderMap.get(topicName).assignInstanceAndState(partition,
-            instance.getInstanceName(),
-            "ONLINE");
-      }
+        return customModeIdealStateBuilder.build();
     }
-    Map<String, IdealState> idealStatesMap = new HashMap<String, IdealState>();
-    for (String topic : idealStatesBuilderMap.keySet()) {
-      IdealState idealState = idealStatesBuilderMap.get(topic).build();
-      idealState.setMaxPartitionsPerInstance(idealState.getPartitionSet().size());
-      idealState.setNumPartitions(idealState.getPartitionSet().size());
-      idealStatesMap.put(topic, idealState);
-    }
-    return idealStatesMap;
-  }
 
-  public static Set<TopicPartition> getUnassignedPartitions(HelixManager helixManager) {
-    Set<TopicPartition> unassignedPartitions = new HashSet<TopicPartition>();
-    HelixAdmin helixAdmin = helixManager.getClusterManagmentTool();
-    String helixClusterName = helixManager.getClusterName();
-    for (String topic : helixAdmin.getResourcesInCluster(helixClusterName)) {
-      IdealState is = helixAdmin.getResourceIdealState(helixClusterName, topic);
-      int numPartitions = is.getNumPartitions();
-      for (int partition = 0; partition < numPartitions; ++partition) {
-        if (is.getInstanceSet(Integer.toString(partition)).isEmpty()) {
-          TopicPartition tpi = new TopicPartition(topic, partition);
-          unassignedPartitions.add(tpi);
+    public static Map<String, IdealState> getIdealStatesFromAssignment(
+            Set<InstanceTopicPartitionHolder> newAssignment) {
+        Map<String, CustomModeISBuilder> idealStatesBuilderMap =
+                new HashMap<String, CustomModeISBuilder>();
+        for (InstanceTopicPartitionHolder instance : newAssignment) {
+            for (TopicPartition tpi : instance.getServingTopicPartitionSet()) {
+                String topicName = tpi.getTopic();
+                String partition = Integer.toString(tpi.getPartition());
+                if (!idealStatesBuilderMap.containsKey(topicName)) {
+                    final CustomModeISBuilder customModeIdealStateBuilder =
+                            new CustomModeISBuilder(topicName);
+                    customModeIdealStateBuilder
+                            .setStateModel(OnlineOfflineStateModel.name)
+                            .setNumReplica(1);
+
+                    idealStatesBuilderMap.put(topicName, customModeIdealStateBuilder);
+                }
+                idealStatesBuilderMap.get(topicName).assignInstanceAndState(partition,
+                        instance.getInstanceName(),
+                        "ONLINE");
+            }
         }
-      }
+        Map<String, IdealState> idealStatesMap = new HashMap<String, IdealState>();
+        for (String topic : idealStatesBuilderMap.keySet()) {
+            IdealState idealState = idealStatesBuilderMap.get(topic).build();
+            idealState.setMaxPartitionsPerInstance(idealState.getPartitionSet().size());
+            idealState.setNumPartitions(idealState.getPartitionSet().size());
+            idealStatesMap.put(topic, idealState);
+        }
+        return idealStatesMap;
     }
-    return unassignedPartitions;
-  }
+
+    public static Set<TopicPartition> getUnassignedPartitions(HelixManager helixManager) {
+        Set<TopicPartition> unassignedPartitions = new HashSet<TopicPartition>();
+        HelixAdmin helixAdmin = helixManager.getClusterManagmentTool();
+        String helixClusterName = helixManager.getClusterName();
+        for (String topic : helixAdmin.getResourcesInCluster(helixClusterName)) {
+            IdealState is = helixAdmin.getResourceIdealState(helixClusterName, topic);
+            int numPartitions = is.getNumPartitions();
+            for (int partition = 0; partition < numPartitions; ++partition) {
+                if (is.getInstanceSet(Integer.toString(partition)).isEmpty()) {
+                    TopicPartition tpi = new TopicPartition(topic, partition);
+                    unassignedPartitions.add(tpi);
+                }
+            }
+        }
+        return unassignedPartitions;
+    }
 
 }

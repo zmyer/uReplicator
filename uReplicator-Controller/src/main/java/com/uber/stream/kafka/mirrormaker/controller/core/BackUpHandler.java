@@ -18,8 +18,9 @@ package com.uber.stream.kafka.mirrormaker.controller.core;
 /**
  * Abstract class for data backup
  */
+// TODO: 2018/5/2 by zmyer
 public abstract class BackUpHandler {
 
-  public abstract void writeToFile(String fileName, String data) throws Exception;
+    public abstract void writeToFile(String fileName, String data) throws Exception;
 
 }
