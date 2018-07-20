@@ -72,6 +72,7 @@ public class SourceKafkaClusterValidationManager {
         _enableAutoTopicExpansion = enableAutoTopicExpansion;
     }
 
+    // TODO: 2018/6/15 by zmyer
     public void start() {
         registerMetrics();
 
@@ -104,6 +105,7 @@ public class SourceKafkaClusterValidationManager {
         }, 120, _timeValue, _timeUnit);
     }
 
+    // TODO: 2018/6/15 by zmyer
     public String validateSourceKafkaCluster() {
         Set<String> notExistedTopics = new HashSet<String>();
         Map<String, Integer> misMatchedPartitionNumberTopics = new HashMap<String, Integer>();
@@ -170,6 +172,7 @@ public class SourceKafkaClusterValidationManager {
         }
     }
 
+    // TODO: 2018/6/15 by zmyer
     private JSONObject constructValidationResultJson(int numMissingTopics, int numMismatchedTopics,
             int numMismatchedTopicPartitions, JSONObject mismatchedTopicPartitions) {
         JSONObject validationResultJson = new JSONObject();
@@ -180,6 +183,7 @@ public class SourceKafkaClusterValidationManager {
         return validationResultJson;
     }
 
+    // TODO: 2018/6/15 by zmyer
     private JSONObject constructMismatchedTopicPartitionsJson(
             Map<String, Integer> mismatchedTopicPartitions) {
         JSONObject mismatchedTopicPartitionsJson = new JSONObject();
@@ -189,6 +193,7 @@ public class SourceKafkaClusterValidationManager {
         return mismatchedTopicPartitionsJson;
     }
 
+    // TODO: 2018/6/15 by zmyer
     private synchronized void updateMetrics(int numMissingTopics, int numMismatchedTopics,
             int numMismatchedTopicPartitions, Map<String, Integer> misMatchedPartitionNumberTopics) {
         _numMissingTopics.inc(numMissingTopics - _numMissingTopics.getCount());

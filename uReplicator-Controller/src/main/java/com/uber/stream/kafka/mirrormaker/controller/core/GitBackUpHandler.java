@@ -45,6 +45,7 @@ public class GitBackUpHandler extends BackUpHandler {
         this.localPath = localPath;
     }
 
+    // TODO: 2018/6/15 by zmyer
     public void writeToFile(String fileName, String data) throws Exception {
         Repository backupRepo = null;
         BufferedWriter output = null;

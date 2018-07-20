@@ -82,7 +82,7 @@
     <scala.version>2.11.8</scala.version>
     <kafka.version>0.10.2.1</kafka.version>
     <kafka.scala.version>2.11</kafka.scala.version>
-    <helix.version>0.6.8</helix.version>
+    <helix.version>0.8.2-SNAPSHOT</helix.version>
     <yammer.version>2.2.0</yammer.version>
     <zookeeper.version>3.4.6</zookeeper.version>
     <zkclient.version>0.5</zkclient.version>

@@ -28,37 +28,38 @@ import org.restlet.routing.Template;
 /**
  * Register different REST endpoints
  */
+// TODO: 2018/6/15 by zmyer
 public class ControllerRestApplication extends Application {
 
-  public ControllerRestApplication(Context context) {
-    super(context);
-  }
+    public ControllerRestApplication(Context context) {
+        super(context);
+    }
 
-  @Override
-  public Restlet createInboundRoot() {
-    final Router router = new Router(getContext());
-    router.setDefaultMatchingMode(Template.MODE_EQUALS);
+    @Override
+    public Restlet createInboundRoot() {
+        final Router router = new Router(getContext());
+        router.setDefaultMatchingMode(Template.MODE_EQUALS);
 
-    // Topic Servlet
-    router.attach("/topics", TopicManagementRestletResource.class);
-    router.attach("/topics/", TopicManagementRestletResource.class);
-    router.attach("/topics/{topicName}", TopicManagementRestletResource.class);
-    router.attach("/topics/{topicName}/", TopicManagementRestletResource.class);
+        // Topic Servlet
+        router.attach("/topics", TopicManagementRestletResource.class);
+        router.attach("/topics/", TopicManagementRestletResource.class);
+        router.attach("/topics/{topicName}", TopicManagementRestletResource.class);
+        router.attach("/topics/{topicName}/", TopicManagementRestletResource.class);
 
-    // Health Check Servlet
-    router.attach("/health", HealthCheckRestletResource.class);
-    router.attach("/health/", HealthCheckRestletResource.class);
+        // Health Check Servlet
+        router.attach("/health", HealthCheckRestletResource.class);
+        router.attach("/health/", HealthCheckRestletResource.class);
 
-    // Validation Servlet
-    router.attach("/validation", ValidationRestletResource.class);
-    router.attach("/validation/", ValidationRestletResource.class);
-    router.attach("/validation/{option}", ValidationRestletResource.class);
-    router.attach("/validation/{option}/", ValidationRestletResource.class);
+        // Validation Servlet
+        router.attach("/validation", ValidationRestletResource.class);
+        router.attach("/validation/", ValidationRestletResource.class);
+        router.attach("/validation/{option}", ValidationRestletResource.class);
+        router.attach("/validation/{option}/", ValidationRestletResource.class);
 
-    // Admin Servlet
-    router.attach("/admin", AdminRestletResource.class);
-    router.attach("/admin/{opt}", AdminRestletResource.class);
+        // Admin Servlet
+        router.attach("/admin", AdminRestletResource.class);
+        router.attach("/admin/{opt}", AdminRestletResource.class);
 
-    return router;
-  }
+        return router;
+    }
 }

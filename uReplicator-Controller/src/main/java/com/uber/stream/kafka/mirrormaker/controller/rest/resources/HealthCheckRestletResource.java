@@ -8,12 +8,13 @@ import org.restlet.resource.ServerResource;
 /**
  * Health check servlet.
  */
+// TODO: 2018/6/15 by zmyer
 public class HealthCheckRestletResource extends ServerResource {
 
-  @Override
-  @Get
-  public Representation get() {
-    return new StringRepresentation("OK");
-  }
+    @Override
+    @Get
+    public Representation get() {
+        return new StringRepresentation("OK");
+    }
 
 }

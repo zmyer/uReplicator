@@ -88,6 +88,7 @@ public class AutoTopicWhitelistingManager {
                 patternToExcludeTopics, refreshTimeInSec, 120);
     }
 
+    // TODO: 2018/6/15 by zmyer
     public AutoTopicWhitelistingManager(KafkaBrokerTopicObserver srcKafkaTopicObserver,
             KafkaBrokerTopicObserver destKafkaTopicObserver,
             HelixMirrorMakerManager helixMirrorMakerManager,
@@ -106,6 +107,7 @@ public class AutoTopicWhitelistingManager {
                 _helixMirrorMakerManager.getHelixClusterName());
     }
 
+    // TODO: 2018/6/15 by zmyer
     public void start() {
         registerMetrics();
 
@@ -140,6 +142,7 @@ public class AutoTopicWhitelistingManager {
         }, Math.min(_initWaitTimeInSec, _refreshTimeInSec), _refreshTimeInSec, _timeUnit);
     }
 
+    // TODO: 2018/6/15 by zmyer
     private void maybeCreateZkPath(String path) {
         try {
             _zkClient.createPersistent(path, true);
@@ -148,6 +151,7 @@ public class AutoTopicWhitelistingManager {
         }
     }
 
+    // TODO: 2018/6/15 by zmyer
     private Set<String> getCandidateTopicsToWhitelist() {
         Set<String> candidateTopics = new HashSet<String>(_srcKafkaTopicObserver.getAllTopics());
         candidateTopics.retainAll(_destKafkaTopicObserver.getAllTopics());
@@ -173,6 +177,7 @@ public class AutoTopicWhitelistingManager {
         return candidateTopics;
     }
 
+    // TODO: 2018/6/15 by zmyer
     private Set<String> getPartitionMismatchedTopics() {
         Set<String> partitionsMismatchedTopics = new HashSet<String>();
         for (String topicName : _helixMirrorMakerManager.getTopicLists()) {
@@ -189,11 +194,13 @@ public class AutoTopicWhitelistingManager {
         return partitionsMismatchedTopics;
     }
 
+    // TODO: 2018/6/15 by zmyer
     private void loadBlacklistedTopics() {
         _blacklistedTopics.clear();
         _blacklistedTopics.addAll(_zkClient.getChildren(_blacklistedTopicsZPath));
     }
 
+    // TODO: 2018/6/15 by zmyer
     private void whitelistCandiateTopics(Set<String> candidateTopicsToWhitelist) {
         for (String topic : candidateTopicsToWhitelist) {
             TopicPartition tp = _srcKafkaTopicObserver.getTopicPartition(topic);

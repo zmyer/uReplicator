@@ -15,67 +15,70 @@
  */
 package com.uber.stream.kafka.mirrormaker.controller.core;
 
-import java.util.PriorityQueue;
 import org.apache.helix.model.IdealState;
 import org.apache.helix.model.builder.CustomModeISBuilder;
+
+import java.util.PriorityQueue;
 
 /**
  * Handle idealStates changes for new topic added and expanded.
  */
+// TODO: 2018/6/15 by zmyer
 public class IdealStateBuilder {
 
-  public static IdealState buildCustomIdealStateFor(String topicName,
-      int numTopicPartitions,
-      PriorityQueue<InstanceTopicPartitionHolder> instanceToNumServingTopicPartitionMap) {
+    public static IdealState buildCustomIdealStateFor(String topicName,
+            int numTopicPartitions,
+            PriorityQueue<InstanceTopicPartitionHolder> instanceToNumServingTopicPartitionMap) {
 
-    final CustomModeISBuilder customModeIdealStateBuilder = new CustomModeISBuilder(topicName);
+        final CustomModeISBuilder customModeIdealStateBuilder = new CustomModeISBuilder(topicName);
 
-    customModeIdealStateBuilder
-        .setStateModel(OnlineOfflineStateModel.name)
-        .setNumPartitions(numTopicPartitions).setNumReplica(1)
-        .setMaxPartitionsPerNode(numTopicPartitions);
+        customModeIdealStateBuilder
+                .setStateModel(OnlineOfflineStateModel.name)
+                .setNumPartitions(numTopicPartitions).setNumReplica(1)
+                .setMaxPartitionsPerNode(numTopicPartitions);
 
-    for (int i = 0; i < numTopicPartitions; ++i) {
-      InstanceTopicPartitionHolder liveInstance = instanceToNumServingTopicPartitionMap.poll();
-      if (liveInstance != null) {
-        customModeIdealStateBuilder.assignInstanceAndState(Integer.toString(i),
-            liveInstance.getInstanceName(), "ONLINE");
-        liveInstance.addTopicPartition(new TopicPartition(topicName, i));
-        instanceToNumServingTopicPartitionMap.add(liveInstance);
-      }
+        for (int i = 0; i < numTopicPartitions; ++i) {
+            InstanceTopicPartitionHolder liveInstance = instanceToNumServingTopicPartitionMap.poll();
+            if (liveInstance != null) {
+                customModeIdealStateBuilder.assignInstanceAndState(Integer.toString(i),
+                        liveInstance.getInstanceName(), "ONLINE");
+                liveInstance.addTopicPartition(new TopicPartition(topicName, i));
+                instanceToNumServingTopicPartitionMap.add(liveInstance);
+            }
+        }
+        return customModeIdealStateBuilder.build();
     }
-    return customModeIdealStateBuilder.build();
-  }
 
-  public static IdealState expandCustomRebalanceModeIdealStateFor(IdealState oldIdealState,
-      String topicName, int newNumTopicPartitions,
-      PriorityQueue<InstanceTopicPartitionHolder> instanceToNumServingTopicPartitionMap) {
-    final CustomModeISBuilder customModeIdealStateBuilder = new CustomModeISBuilder(topicName);
+    // TODO: 2018/6/15 by zmyer
+    public static IdealState expandCustomRebalanceModeIdealStateFor(IdealState oldIdealState,
+            String topicName, int newNumTopicPartitions,
+            PriorityQueue<InstanceTopicPartitionHolder> instanceToNumServingTopicPartitionMap) {
+        final CustomModeISBuilder customModeIdealStateBuilder = new CustomModeISBuilder(topicName);
 
-    customModeIdealStateBuilder
-        .setStateModel(OnlineOfflineStateModel.name)
-        .setNumPartitions(newNumTopicPartitions).setNumReplica(1)
-        .setMaxPartitionsPerNode(newNumTopicPartitions);
+        customModeIdealStateBuilder
+                .setStateModel(OnlineOfflineStateModel.name)
+                .setNumPartitions(newNumTopicPartitions).setNumReplica(1)
+                .setMaxPartitionsPerNode(newNumTopicPartitions);
 
-    int numOldPartitions = oldIdealState.getNumPartitions();
-    for (int i = 0; i < numOldPartitions; ++i) {
-      String partitionName = Integer.toString(i);
-      try {
-        String instanceName =
-            oldIdealState.getInstanceStateMap(partitionName).keySet().iterator().next();
-        customModeIdealStateBuilder.assignInstanceAndState(partitionName, instanceName, "ONLINE");
-      } catch (Exception e) {
-        // No worker added into the cluster.
-      }
+        int numOldPartitions = oldIdealState.getNumPartitions();
+        for (int i = 0; i < numOldPartitions; ++i) {
+            String partitionName = Integer.toString(i);
+            try {
+                String instanceName =
+                        oldIdealState.getInstanceStateMap(partitionName).keySet().iterator().next();
+                customModeIdealStateBuilder.assignInstanceAndState(partitionName, instanceName, "ONLINE");
+            } catch (Exception e) {
+                // No worker added into the cluster.
+            }
+        }
+        for (int i = numOldPartitions; i < newNumTopicPartitions; ++i) {
+            InstanceTopicPartitionHolder liveInstance = instanceToNumServingTopicPartitionMap.poll();
+            customModeIdealStateBuilder.assignInstanceAndState(Integer.toString(i),
+                    liveInstance.getInstanceName(), "ONLINE");
+            liveInstance.addTopicPartition(new TopicPartition(topicName, i));
+            instanceToNumServingTopicPartitionMap.add(liveInstance);
+        }
+        return customModeIdealStateBuilder.build();
     }
-    for (int i = numOldPartitions; i < newNumTopicPartitions; ++i) {
-      InstanceTopicPartitionHolder liveInstance = instanceToNumServingTopicPartitionMap.poll();
-      customModeIdealStateBuilder.assignInstanceAndState(Integer.toString(i),
-          liveInstance.getInstanceName(), "ONLINE");
-      liveInstance.addTopicPartition(new TopicPartition(topicName, i));
-      instanceToNumServingTopicPartitionMap.add(liveInstance);
-    }
-    return customModeIdealStateBuilder.build();
-  }
 
 }

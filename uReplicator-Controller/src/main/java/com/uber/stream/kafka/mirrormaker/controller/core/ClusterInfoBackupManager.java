@@ -54,6 +54,7 @@ public class ClusterInfoBackupManager {
     private final ControllerConf _config;
     private String envInfo = "default";
 
+    // TODO: 2018/6/15 by zmyer
     public ClusterInfoBackupManager(HelixMirrorMakerManager helixMirrorMakerManager,
             BackUpHandler handler,
             ControllerConf config) {
@@ -62,6 +63,7 @@ public class ClusterInfoBackupManager {
         _config = config;
     }
 
+    // TODO: 2018/6/15 by zmyer
     public void start() {
         LOGGER.info("Trying to schedule cluster backup job at rate {} {} !", _timeValue, _timeUnit.toString());
         _executorService.scheduleAtFixedRate(new Runnable() {
@@ -78,6 +80,7 @@ public class ClusterInfoBackupManager {
         }, 20, _timeValue, _timeUnit);
     }
 
+    // TODO: 2018/6/15 by zmyer
     public synchronized void dumpState() throws Exception {
         if (!_helixMirrorMakerManager.isLeader()) {
             return;

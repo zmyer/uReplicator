@@ -88,6 +88,7 @@ public class ControllerStarter {
         }
     }
 
+    // TODO: 2018/6/15 by zmyer
     private SourceKafkaClusterValidationManager getSourceKafkaClusterValidationManager() {
         if (_config.getEnableSrcKafkaValidation()) {
             if (!_kafkaBrokerTopicObserverMap.containsKey(SRC_KAFKA_CLUSTER)) {

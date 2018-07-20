@@ -15,11 +15,11 @@
  */
 package com.uber.stream.kafka.mirrormaker.controller.reporter;
 
-import com.codahale.metrics.jmx.*;
 import com.codahale.metrics.MetricFilter;
 import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.graphite.Graphite;
 import com.codahale.metrics.graphite.GraphiteReporter;
+import com.codahale.metrics.jmx.JmxReporter;
 import com.google.common.base.Preconditions;
 import com.google.common.io.Closeables;
 import com.uber.stream.kafka.mirrormaker.controller.ControllerConf;

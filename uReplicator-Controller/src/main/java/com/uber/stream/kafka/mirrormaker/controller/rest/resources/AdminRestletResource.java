@@ -13,33 +13,34 @@ import org.slf4j.LoggerFactory;
  *
  * @author xiangfu
  */
+// TODO: 2018/6/15 by zmyer
 public class AdminRestletResource extends ServerResource {
 
-  private static final Logger LOGGER =
-      LoggerFactory.getLogger(AdminRestletResource.class);
+    private static final Logger LOGGER =
+            LoggerFactory.getLogger(AdminRestletResource.class);
 
-  private final HelixMirrorMakerManager _helixMirrorMakerManager;
+    private final HelixMirrorMakerManager _helixMirrorMakerManager;
 
-  public AdminRestletResource() {
-    _helixMirrorMakerManager = (HelixMirrorMakerManager) getApplication().getContext()
-        .getAttributes().get(HelixMirrorMakerManager.class.toString());
-  }
-
-  @Override
-  @Get
-  public Representation get() {
-    final String opt = (String) getRequest().getAttributes().get("opt");
-    if ("disable_autobalancing".equalsIgnoreCase(opt)) {
-      _helixMirrorMakerManager.disableAutoBalancing();
-      LOGGER.info("Disabled autobalancing!");
-      return new StringRepresentation("Disabled autobalancing!\n");
-    } else if ("enable_autobalancing".equalsIgnoreCase(opt)) {
-      _helixMirrorMakerManager.enableAutoBalancing();
-      LOGGER.info("Enabled autobalancing!");
-      return new StringRepresentation("Enabled autobalancing!\n");
+    public AdminRestletResource() {
+        _helixMirrorMakerManager = (HelixMirrorMakerManager) getApplication().getContext()
+                .getAttributes().get(HelixMirrorMakerManager.class.toString());
     }
-    LOGGER.info("No valid input!");
-    return new StringRepresentation("No valid input!\n");
-  }
+
+    @Override
+    @Get
+    public Representation get() {
+        final String opt = (String) getRequest().getAttributes().get("opt");
+        if ("disable_autobalancing".equalsIgnoreCase(opt)) {
+            _helixMirrorMakerManager.disableAutoBalancing();
+            LOGGER.info("Disabled autobalancing!");
+            return new StringRepresentation("Disabled autobalancing!\n");
+        } else if ("enable_autobalancing".equalsIgnoreCase(opt)) {
+            _helixMirrorMakerManager.enableAutoBalancing();
+            LOGGER.info("Enabled autobalancing!");
+            return new StringRepresentation("Enabled autobalancing!\n");
+        }
+        LOGGER.info("No valid input!");
+        return new StringRepresentation("No valid input!\n");
+    }
 
 }

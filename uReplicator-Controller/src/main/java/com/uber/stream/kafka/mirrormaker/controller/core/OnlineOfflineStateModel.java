@@ -44,6 +44,7 @@ public final class OnlineOfflineStateModel extends StateModelDefinition {
     /**
      * Build OnlineOffline state model definition
      */
+    // TODO: 2018/6/15 by zmyer
     public static StateModelDefinition build() {
         StateModelDefinition.Builder builder = new StateModelDefinition.Builder(name);
         // init state

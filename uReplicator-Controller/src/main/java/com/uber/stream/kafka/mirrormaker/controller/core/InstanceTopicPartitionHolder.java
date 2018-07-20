@@ -27,8 +27,9 @@ import java.util.Set;
  */
 // TODO: 2018/5/2 by zmyer
 public class InstanceTopicPartitionHolder {
-
+    //实例名称
     private final String _instanceName;
+    //topic与分区集合
     private final Set<TopicPartition> _topicPartitionSet = new HashSet<TopicPartition>();
 
     public InstanceTopicPartitionHolder(String instance) {

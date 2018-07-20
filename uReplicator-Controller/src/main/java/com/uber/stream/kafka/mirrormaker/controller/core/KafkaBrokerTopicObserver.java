@@ -67,6 +67,7 @@ public class KafkaBrokerTopicObserver implements IZkChildListener {
     private final static String METRIC_TEMPLATE = "KafkaBrokerTopicObserver.%s.%s";
     private final Object _lock = new Object();
 
+    // TODO: 2018/6/15 by zmyer
     public KafkaBrokerTopicObserver(String brokerClusterName, String zkString, long refreshTimeIntervalInMillis) {
         LOGGER.info("Trying to init KafkaBrokerTopicObserver {} with ZK: {}", brokerClusterName,
                 zkString);

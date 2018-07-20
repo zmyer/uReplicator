@@ -47,30 +47,36 @@ import java.util.concurrent.TimeUnit;
  */
 // TODO: 2018/5/2 by zmyer
 public class AutoRebalanceLiveInstanceChangeListener implements LiveInstanceChangeListener {
-
+    //日志
     private static final Logger LOGGER =
             LoggerFactory.getLogger(AutoRebalanceLiveInstanceChangeListener.class);
-
+    //延时调度器
     private final ScheduledExecutorService _delayedScheuler =
             Executors.newSingleThreadScheduledExecutor();
+    //mirrorMaker管理器
     private final HelixMirrorMakerManager _helixMirrorMakerManager;
+    //helix管理器
     private final HelixManager _helixManager;
-
+    //存活实体计数器
     private final Counter _numLiveInstances = new Counter();
     private final Meter _rebalanceRate = new Meter();
     private final Timer _rebalanceTimer = new Timer();
 
+    //自动平衡调度时间间隔
     private final int _delayedAutoReblanceTimeInSeconds;
 
+    // TODO: 2018/5/8 by zmyer
     public AutoRebalanceLiveInstanceChangeListener(HelixMirrorMakerManager helixMirrorMakerManager,
             HelixManager helixManager, int delayedAutoReblanceTimeInSeconds) {
         _helixMirrorMakerManager = helixMirrorMakerManager;
         _helixManager = helixManager;
         _delayedAutoReblanceTimeInSeconds = delayedAutoReblanceTimeInSeconds;
         LOGGER.info("Delayed Auto Reblance Time In Seconds: {}", _delayedAutoReblanceTimeInSeconds);
+        //注册metric
         registerMetrics();
     }
 
+    // TODO: 2018/5/8 by zmyer
     private void registerMetrics() {
         try {
             HelixKafkaMirrorMakerMetricsReporter.get().registerMetric("worker.liveInstances",
@@ -84,14 +90,17 @@ public class AutoRebalanceLiveInstanceChangeListener implements LiveInstanceChan
         }
     }
 
+    // TODO: 2018/5/8 by zmyer
     @Override
     public void onLiveInstanceChange(final List<LiveInstance> liveInstances,
             NotificationContext changeContext) {
         LOGGER.info("AutoRebalanceLiveInstanceChangeListener.onLiveInstanceChange() wakes up!");
+        //当存活的实体变更时，开始定时调度
         _delayedScheuler.schedule(new Runnable() {
             @Override
             public void run() {
                 try {
+                    //平衡当前的集群
                     rebalanceCurrentCluster(_helixMirrorMakerManager.getCurrentLiveInstances());
                 } catch (Exception e) {
                     LOGGER.error("Got exception during rebalance the whole cluster! ", e);
@@ -100,10 +109,12 @@ public class AutoRebalanceLiveInstanceChangeListener implements LiveInstanceChan
         }, _delayedAutoReblanceTimeInSeconds, TimeUnit.SECONDS);
     }
 
+    // TODO: 2018/5/8 by zmyer
     public synchronized void rebalanceCurrentCluster(List<LiveInstance> liveInstances) {
         Context context = _rebalanceTimer.time();
         LOGGER.info("AutoRebalanceLiveInstanceChangeListener.onLiveInstanceChange() wakes up!");
         try {
+            //更新当前存活的实体数目
             _numLiveInstances.inc(liveInstances.size() - _numLiveInstances.getCount());
             if (!_helixManager.isLeader()) {
                 LOGGER.info("Not leader, do nothing!");
@@ -117,14 +128,17 @@ public class AutoRebalanceLiveInstanceChangeListener implements LiveInstanceChan
                 LOGGER.info("No live instances, do nothing!");
                 return;
             }
+            //获取实体与topic分区集合
             final Map<String, Set<TopicPartition>> instanceToTopicPartitionMap =
                     HelixUtils.getInstanceToTopicPartitionsMap(_helixManager);
+            //获取所有还未分配的topic分区
             Set<TopicPartition> unassignedTopicPartitions =
                     HelixUtils.getUnassignedPartitions(_helixManager);
             if (instanceToTopicPartitionMap.isEmpty() && unassignedTopicPartitions.isEmpty()) {
                 LOGGER.info("No topic got assigned yet, do nothing!");
                 return;
             }
+            //
             Set<InstanceTopicPartitionHolder> newAssignment =
                     rescaleInstanceToTopicPartitionMap(liveInstances, instanceToTopicPartitionMap,
                             unassignedTopicPartitions);
@@ -154,6 +168,7 @@ public class AutoRebalanceLiveInstanceChangeListener implements LiveInstanceChan
         return !removedInstances.isEmpty();
     }
 
+    // TODO: 2018/5/8 by zmyer
     private static Set<InstanceTopicPartitionHolder> rescaleInstanceToTopicPartitionMap(
             List<LiveInstance> liveInstances,
             Map<String, Set<TopicPartition>> instanceToTopicPartitionMap,

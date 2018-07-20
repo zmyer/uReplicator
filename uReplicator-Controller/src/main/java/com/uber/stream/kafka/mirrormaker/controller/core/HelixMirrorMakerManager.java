@@ -156,10 +156,12 @@ public class HelixMirrorMakerManager {
                 new HashMap<String, String>());
     }
 
+    // TODO: 2018/6/15 by zmyer
     public synchronized void expandTopicInMirrorMaker(TopicPartition topicPartitionInfo) {
         this.expandTopicInMirrorMaker(topicPartitionInfo.getTopic(), topicPartitionInfo.getPartition());
     }
 
+    // TODO: 2018/6/15 by zmyer
     public synchronized void expandTopicInMirrorMaker(String topicName, int newNumTopicPartitions) {
         updateCurrentServingInstance();
         synchronized (_currentServingInstance) {
@@ -191,6 +193,7 @@ public class HelixMirrorMakerManager {
         return _helixAdmin.getResourcesInCluster(_helixClusterName);
     }
 
+    // TODO: 2018/6/15 by zmyer
     public void disableAutoBalancing() {
         HelixConfigScope scope =
                 new HelixConfigScopeBuilder(ConfigScopeProperty.CLUSTER).forCluster(_helixClusterName)
@@ -200,6 +203,7 @@ public class HelixMirrorMakerManager {
         _helixAdmin.setConfig(scope, properties);
     }
 
+    // TODO: 2018/6/15 by zmyer
     public void enableAutoBalancing() {
         HelixConfigScope scope =
                 new HelixConfigScopeBuilder(ConfigScopeProperty.CLUSTER).forCluster(_helixClusterName)

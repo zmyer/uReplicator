@@ -43,6 +43,7 @@ import java.util.Set;
 // TODO: 2018/5/2 by zmyer
 public class HelixUtils {
 
+    // TODO: 2018/6/15 by zmyer
     public static String getAbsoluteZkPathForHelix(String zkBaseUrl) {
         zkBaseUrl = StringUtils.chomp(zkBaseUrl, "/");
         return zkBaseUrl;
@@ -159,6 +160,7 @@ public class HelixUtils {
         return idealStatesMap;
     }
 
+    // TODO: 2018/5/8 by zmyer
     public static Set<TopicPartition> getUnassignedPartitions(HelixManager helixManager) {
         Set<TopicPartition> unassignedPartitions = new HashSet<TopicPartition>();
         HelixAdmin helixAdmin = helixManager.getClusterManagmentTool();
