@@ -42,21 +42,20 @@ public class FileBackUpHandler extends BackUpHandler {
         try {
             File myfile = new File(localPath + "/" + fileName);
 
-            try {
-                output = new BufferedWriter(new FileWriter(myfile));
-                output.write(data);
-                output.flush();
-                LOGGER.info("Successful backup of file " + fileName);
-            } catch (IOException e) {
-                LOGGER.error("Error writing backup to the file " + fileName);
-                throw e;
-            }
-
-        } catch (Exception e) {
-            throw e;
-        } finally {
-            output.close();
-        }
+      try {
+        output = new BufferedWriter(new FileWriter(myfile));
+        output.write(data);
+        output.flush();
+        LOGGER.info("Successful backup of file " + fileName);
+      } catch (IOException e) {
+        LOGGER.error("Error writing backup to the file " + fileName, e);
+        throw e;
+      }
+    } finally {
+      if (output != null) {
+        output.close();
+      }
     }
+  }
 
 }

@@ -36,38 +36,38 @@ import java.util.concurrent.TimeUnit;
 // TODO: 2018/5/2 by zmyer
 public class HelixKafkaMirrorMakerMetricsReporter {
 
-    private static final String KAFKA_MIRROR_MAKER_METRICS_REPORTER_PREFIX_FORMAT =
-            "stats.%s.counter.kafka-mirror-maker-controller.%s.%s";
-
-    private static HelixKafkaMirrorMakerMetricsReporter METRICS_REPORTER_INSTANCE = null;
-    private static final Logger LOGGER = Logger.getLogger(HelixKafkaMirrorMakerMetricsReporter.class);
-    private static volatile boolean DID_INIT = false;
+  private static HelixKafkaMirrorMakerMetricsReporter METRICS_REPORTER_INSTANCE = null;
+  private static final Logger LOGGER = Logger.getLogger(HelixKafkaMirrorMakerMetricsReporter.class);
+  private static volatile boolean DID_INIT = false;
 
     private final MetricRegistry _registry;
     private final GraphiteReporter _graphiteReporter;
     private final JmxReporter _jmxReporter;
     private final String _reporterMetricPrefix;
 
-    // Exposed for tests. Call Metrics.get() instead.
-    HelixKafkaMirrorMakerMetricsReporter(ControllerConf config) {
-        final String environment = config.getEnvironment();
-        final String clientId = config.getInstanceId();
-        String[] dcNenv = parse(environment);
-        if (dcNenv == null) {
-            LOGGER.error("Error parsing environment info");
-            _registry = null;
-            _graphiteReporter = null;
-            _jmxReporter = null;
-            _reporterMetricPrefix = null;
-            return;
-        }
-        _reporterMetricPrefix = String.format(KAFKA_MIRROR_MAKER_METRICS_REPORTER_PREFIX_FORMAT,
-                dcNenv[0], dcNenv[1], clientId);
-        LOGGER.info("Reporter Metric Prefix is : " + _reporterMetricPrefix);
-        _registry = new MetricRegistry();
-        final Boolean enabledGraphiteReporting = true;
-        final Boolean enabledJmxReporting = true;
-        final long graphiteReportFreqSec = 10L;
+  // Exposed for tests. Call Metrics.get() instead.
+  HelixKafkaMirrorMakerMetricsReporter(ControllerConf config) {
+    final String environment = config.getEnvironment();
+    final String clientId = config.getInstanceId();
+    String[] dcNenv = parse(environment);
+    if (dcNenv == null) {
+      LOGGER.error("Error parsing environment info");
+      _registry = null;
+      _graphiteReporter = null;
+      _jmxReporter = null;
+      _reporterMetricPrefix = null;
+      return;
+    }
+    _reporterMetricPrefix = config.isFederatedEnabled() ?
+        String.format("stats.%s.counter.%s.%s.%s.%s",
+            dcNenv[0], config.getMetricsPrefix(), dcNenv[1], config.getRoute(), clientId) :
+        String.format("stats.%s.counter.%s.%s.%s",
+            dcNenv[0], config.getMetricsPrefix(), dcNenv[1], clientId);
+    LOGGER.info("Reporter Metric Prefix is : " + _reporterMetricPrefix);
+    _registry = new MetricRegistry();
+    final Boolean enabledGraphiteReporting = true;
+    final Boolean enabledJmxReporting = true;
+    final long graphiteReportFreqSec = 60L;
 
         // Init jmx reporter
         if (enabledJmxReporting) {
@@ -120,18 +120,18 @@ public class HelixKafkaMirrorMakerMetricsReporter {
         return res;
     }
 
-    // Exposed for test
-    static Graphite getGraphite(ControllerConf config) {
-        if (config.getGraphiteHost() == null || config.getGraphitePort() == 0) {
-            LOGGER.warn("No Graphite built!");
-            return null;
-        }
-        InetSocketAddress graphiteAddress =
-                new InetSocketAddress(config.getGraphiteHost(), config.getGraphitePort());
-        LOGGER.warn(String.format("Trying to connect to Graphite with address: %s",
-                graphiteAddress.toString()));
-        return new Graphite(graphiteAddress);
+  // Exposed for test
+  static Graphite getGraphite(ControllerConf config) {
+    if (config.getGraphiteHost() == null || config.getGraphitePort() == 0) {
+      LOGGER.warn("No Graphite built!");
+      return null;
     }
+    InetSocketAddress graphiteAddress =
+        new InetSocketAddress(config.getGraphiteHost(), config.getGraphitePort());
+    LOGGER.info(String.format("Trying to connect to Graphite with address: %s",
+        graphiteAddress.toString()));
+    return new Graphite(graphiteAddress);
+  }
 
     /**
      * This function must be called before calling the get() method, because of

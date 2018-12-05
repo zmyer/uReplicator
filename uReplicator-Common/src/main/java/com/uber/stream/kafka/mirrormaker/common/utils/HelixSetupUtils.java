@@ -13,9 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.uber.stream.kafka.mirrormaker.controller.utils;
+package com.uber.stream.kafka.mirrormaker.common.utils;
 
-import com.uber.stream.kafka.mirrormaker.controller.core.OnlineOfflineStateModel;
+import com.uber.stream.kafka.mirrormaker.common.core.OnlineOfflineStateModel;
+import java.util.HashMap;
+import java.util.Map;
 import org.apache.helix.HelixAdmin;
 import org.apache.helix.HelixManager;
 import org.apache.helix.controller.HelixControllerMain;
@@ -41,16 +43,13 @@ public class HelixSetupUtils {
     //日志
     private static final Logger LOGGER = LoggerFactory.getLogger(HelixSetupUtils.class);
 
-    // TODO: 2018/5/2 by zmyer
-    public static synchronized HelixManager setup(String helixClusterName, String zkPath,
-            String controllerInstanceId) {
-        try {
-            //创建helix集群对象
-            createHelixClusterIfNeeded(helixClusterName, zkPath);
-        } catch (final Exception e) {
-            LOGGER.error("Caught exception", e);
-            return null;
-        }
+  public static synchronized HelixManager setup(String helixClusterName, String zkPath, String controllerInstanceId) {
+    try {
+      createHelixClusterIfNeeded(helixClusterName, zkPath);
+    } catch (final Exception e) {
+      LOGGER.error("Caught exception", e);
+      return null;
+    }
 
         try {
             //创建helix控制器
@@ -66,12 +65,10 @@ public class HelixSetupUtils {
         //创建helix管理者
         final HelixAdmin admin = new ZKHelixAdmin(zkPath);
 
-        //如果当前的集群已经创建，则直接退出
-        if (admin.getClusters().contains(helixClusterName)) {
-            LOGGER.info(
-                    "cluster already exist, skipping it.. ********************************************* ");
-            return;
-        }
+    if (admin.getClusters().contains(helixClusterName)) {
+      LOGGER.info("cluster already exist, skipping it.. ********************************************* ");
+      return;
+    }
 
         LOGGER.info("Creating a new cluster, as the helix cluster : " + helixClusterName
                 + " was not found ********************************************* ");

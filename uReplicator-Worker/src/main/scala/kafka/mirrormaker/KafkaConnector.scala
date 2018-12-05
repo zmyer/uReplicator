@@ -18,6 +18,7 @@ package kafka.mirrormaker
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicLong}
 import java.util.concurrent.{ConcurrentHashMap, LinkedBlockingQueue, TimeUnit}
 
+import com.yammer.metrics.core.Gauge
 import kafka.common.{AppInfo, OffsetAndMetadata, OffsetMetadataAndError, TopicAndPartition}
 import kafka.consumer._
 import kafka.metrics.{KafkaMetricsGroup, KafkaMetricsReporter}
@@ -35,14 +36,21 @@ import scala.collection.JavaConverters._
  * @param config
  */
 class KafkaConnector(private val consumerIdString: String,
-                     private val config: ConsumerConfig) extends KafkaMetricsGroup {
+                     private val config: ConsumerConfig,
+                     private val brokerListStr: String) extends KafkaMetricsGroup {
+
+
   private val zkClient: ZkClient = ZkUtils.createZkClient(config.zkConnect, config.zkSessionTimeoutMs, config.zkConnectionTimeoutMs)
   private val queue: LinkedBlockingQueue[FetchedDataChunk] = new LinkedBlockingQueue[FetchedDataChunk](config.queuedMaxMessages)
   private val decoder: DefaultDecoder = new DefaultDecoder()
-  private val fetcherManager: CompactConsumerFetcherManager = new CompactConsumerFetcherManager(consumerIdString, config, zkClient)
-  private val zkUtils = ZkUtils.apply(zkClient, false)
-  private val cluster = zkUtils.getCluster()
+  private val fetcherManager: CompactConsumerFetcherManager = new CompactConsumerFetcherManager(consumerIdString, config, zkClient, brokerListStr)
 
+  private val zkUtils = ZkUtils.apply(zkClient, false)
+
+  private val commitZkClient: ZkClient = if (config.props.containsKey("commit.zookeeper.connect"))
+    ZkUtils.createZkClient(config.props.getString("commit.zookeeper.connect"), config.zkSessionTimeoutMs, config.zkConnectionTimeoutMs)
+  else null
+  private val commitZkUtils = if (commitZkClient != null) ZkUtils.apply(commitZkClient, false) else zkUtils
   // Using a concurrent hash map for efficiency. Without this we will need a lock
   val topicRegistry = new ConcurrentHashMap[TopicAndPartition, PartitionTopicInfo]()
   private val checkpointedZkOffsets = new Pool[TopicAndPartition, Long]
@@ -52,8 +60,19 @@ class KafkaConnector(private val consumerIdString: String,
   private val kafkaCommitMeter = newMeter("KafkaCommitsPerSec", "commits", TimeUnit.SECONDS, Map("clientId" -> config.clientId))
   private val zkCommitMeter = newMeter("ZooKeeperCommitsPerSec", "commits", TimeUnit.SECONDS, Map("clientId" -> config.clientId))
 
+  newGauge(
+    "TotalBlockingQueueSize",
+    new Gauge[Long] {
+      // calculate the total size of those blocking queues
+      def value = {
+        queue.size()
+      }
+    },
+    Map("clientId" -> config.clientId)
+  )
+
   // Initialize the fetcher manager
-  fetcherManager.startConnections(Nil, cluster)
+  fetcherManager.startConnections(Nil)
 
   KafkaMetricsReporter.startReporters(config.props)
   AppInfo.registerInfo()
@@ -61,11 +80,14 @@ class KafkaConnector(private val consumerIdString: String,
   def shutdown(): Unit = {
     val canShutdown = isShuttingDown.compareAndSet(false, true)
     if (canShutdown) {
-      info("Connector is now shutting down !")
+      info("Connector is now shutting down!")
       KafkaMetricsGroup.removeAllConsumerMetrics(config.clientId)
       fetcherManager.stopConnections()
       if (zkClient != null) {
         zkClient.close()
+      }
+      if (commitZkClient != null) {
+        commitZkClient.close()
       }
     }
   }
@@ -95,7 +117,7 @@ class KafkaConnector(private val consumerIdString: String,
       consumedOffset,
       fetchedOffset,
       new AtomicInteger(config.fetchMessageMaxBytes),
-      consumerIdString)
+      config.clientId)
 
     fetcherManager.addTopicPartition(partTopicInfo)
     topicRegistry.put(TopicAndPartition(topic, partition), partTopicInfo)
@@ -140,7 +162,7 @@ class KafkaConnector(private val consumerIdString: String,
     // Check if the offsets need to be updated
     if (checkpointedZkOffsets.get(topicPartition) != offset) {
       val topicDirs = new ZKGroupTopicDirs(config.groupId, topicPartition.topic)
-      zkUtils.updatePersistentPath(topicDirs.consumerOffsetDir + "/" + topicPartition.partition, offset.toString)
+      commitZkUtils.updatePersistentPath(topicDirs.consumerOffsetDir + "/" + topicPartition.partition, offset.toString)
       checkpointedZkOffsets.put(topicPartition, offset)
       zkCommitMeter.mark()
     }
@@ -148,7 +170,7 @@ class KafkaConnector(private val consumerIdString: String,
 
   private def fetchOffsetFromZooKeeper(topicPartition: TopicAndPartition) = {
     val dirs = new ZKGroupTopicDirs(config.groupId, topicPartition.topic)
-    val offsetString = zkUtils.readDataMaybeNull(dirs.consumerOffsetDir + "/" + topicPartition.partition)._1
+    val offsetString = commitZkUtils.readDataMaybeNull(dirs.consumerOffsetDir + "/" + topicPartition.partition)._1
     offsetString match {
       case Some(offsetStr) => (topicPartition, OffsetMetadataAndError(offsetStr.toLong))
       case None => (topicPartition, OffsetMetadataAndError.NoOffset)

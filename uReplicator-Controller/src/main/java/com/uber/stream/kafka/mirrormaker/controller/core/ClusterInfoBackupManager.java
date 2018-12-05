@@ -42,7 +42,8 @@ import java.util.concurrent.TimeUnit;
 // TODO: 2018/5/2 by zmyer
 public class ClusterInfoBackupManager {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(ClusterInfoBackupManager.class);
+  private static final Logger LOGGER = LoggerFactory.getLogger(ClusterInfoBackupManager.class);
+  private static final int STOP_TIMEOUT_SEC = 5;
 
     private final HelixMirrorMakerManager _helixMirrorMakerManager;
     private final ScheduledExecutorService _executorService = Executors.newSingleThreadScheduledExecutor();
@@ -50,9 +51,8 @@ public class ClusterInfoBackupManager {
     private int _timeValue = 24 * 60 * 60;
     private TimeUnit _timeUnit = TimeUnit.SECONDS;
 
-    private final BackUpHandler _handler;
-    private final ControllerConf _config;
-    private String envInfo = "default";
+  private final BackUpHandler _handler;
+  private final ControllerConf _config;
 
     // TODO: 2018/6/15 by zmyer
     public ClusterInfoBackupManager(HelixMirrorMakerManager helixMirrorMakerManager,
@@ -63,28 +63,36 @@ public class ClusterInfoBackupManager {
         _config = config;
     }
 
-    // TODO: 2018/6/15 by zmyer
-    public void start() {
-        LOGGER.info("Trying to schedule cluster backup job at rate {} {} !", _timeValue, _timeUnit.toString());
-        _executorService.scheduleAtFixedRate(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    dumpState();
-                } catch (Exception e) {
-                    LOGGER.error(String.format("Failed to take backup, with exception: %s", e));
-                    return;
-                }
-                LOGGER.info("Backup taken successfully!");
-            }
-        }, 20, _timeValue, _timeUnit);
-    }
-
-    // TODO: 2018/6/15 by zmyer
-    public synchronized void dumpState() throws Exception {
-        if (!_helixMirrorMakerManager.isLeader()) {
-            return;
+  public void start() {
+    LOGGER.info("Trying to schedule cluster backup job at rate {} {} !", _timeValue, _timeUnit.toString());
+    _executorService.scheduleAtFixedRate(new Runnable() {
+      @Override
+      public void run() {
+        try {
+          dumpState();
+        } catch (Exception e) {
+          LOGGER.error("Failed to take backup with exception", e);
+          return;
         }
+        LOGGER.info("Backup taken successfully!");
+      }
+    }, 20, _timeValue, _timeUnit);
+  }
+
+  public void stop() {
+    _executorService.shutdown();
+    try {
+      _executorService.awaitTermination(STOP_TIMEOUT_SEC, TimeUnit.SECONDS);
+    } catch (InterruptedException e) {
+      LOGGER.info("Stop ClusterInfoBackupManager got interrupted");
+    }
+    _executorService.shutdownNow();
+  }
+
+  public synchronized void dumpState() throws Exception {
+    if (!_helixMirrorMakerManager.isLeader()) {
+      return;
+    }
 
         LOGGER.info("Backing up the CurrentState and the IdealState!");
         StringBuilder idealState = new StringBuilder();
@@ -172,17 +180,17 @@ public class ClusterInfoBackupManager {
 
         partitionAssignment.append(new StringRepresentation(resultList.toJSONString()));
 
-        if (_config.getEnvironment() != null && _config.getEnvironment().trim().length() > 0) {
-            envInfo = _config.getEnvironment();
-        }
-        String idealStateFileName = "idealState-backup-" + envInfo;
-        String paritionAssignmentFileName = "partitionAssgn-backup-" + envInfo;
-        try {
-            _handler.writeToFile(idealStateFileName, idealState.toString());
-            _handler.writeToFile(paritionAssignmentFileName, partitionAssignment.toString());
-        } catch (Exception e) {
-            throw e;
-        }
+    String envInfo = "default";
+    if (_config.getEnvironment() != null && _config.getEnvironment().trim().length() > 0) {
+      envInfo = _config.getEnvironment().trim();
     }
+    if (_config.getHelixClusterName() != null && !_config.getHelixClusterName().trim().isEmpty()) {
+      envInfo = envInfo + "-" + _config.getHelixClusterName().trim();
+    }
+    String idealStateFileName = "idealState-backup-" + envInfo;
+    String paritionAssignmentFileName = "partitionAssgn-backup-" + envInfo;
+    _handler.writeToFile(idealStateFileName, idealState.toString());
+    _handler.writeToFile(paritionAssignmentFileName, partitionAssignment.toString());
+  }
 
 }

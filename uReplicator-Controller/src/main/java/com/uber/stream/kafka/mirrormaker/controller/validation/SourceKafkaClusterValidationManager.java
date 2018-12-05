@@ -38,8 +38,9 @@ import java.util.concurrent.TimeUnit;
 // TODO: 2018/5/2 by zmyer
 public class SourceKafkaClusterValidationManager {
 
-    private static final Logger LOGGER =
-            LoggerFactory.getLogger(SourceKafkaClusterValidationManager.class);
+  private static final Logger LOGGER =
+      LoggerFactory.getLogger(SourceKafkaClusterValidationManager.class);
+  private static final int STOP_TIMEOUT_SEC = 5;
 
     private final HelixMirrorMakerManager _helixMirrorMakerManager;
     private final ScheduledExecutorService _executorService =
@@ -105,50 +106,59 @@ public class SourceKafkaClusterValidationManager {
         }, 120, _timeValue, _timeUnit);
     }
 
-    // TODO: 2018/6/15 by zmyer
-    public String validateSourceKafkaCluster() {
-        Set<String> notExistedTopics = new HashSet<String>();
-        Map<String, Integer> misMatchedPartitionNumberTopics = new HashMap<String, Integer>();
-        int numMismatchedTopicPartitions = 0;
-        for (String topic : _helixMirrorMakerManager.getTopicLists()) {
-            TopicPartition tp = _sourceKafkaTopicObserver.getTopicPartition(topic);
-            if (tp == null) {
-                LOGGER.warn("Topic {} is not in source kafka broker!", topic);
-                notExistedTopics.add(topic);
-            } else {
-                int numPartitionsInMirrorMaker =
-                        _helixMirrorMakerManager.getIdealStateForTopic(topic).getNumPartitions();
-                if (numPartitionsInMirrorMaker != tp.getPartition()) {
-                    int mismatchedPartitions = Math.abs(numPartitionsInMirrorMaker - tp.getPartition());
-                    if (_enableAutoTopicExpansion && (tp.getPartition() > numPartitionsInMirrorMaker)) {
-                        // Only do topic expansion
-                        LOGGER.warn(
-                                "Trying to expand topic {} from {} partitions in mirror maker to {} from source kafka broker!",
-                                topic, numPartitionsInMirrorMaker, tp.getPartition());
-                        _numAutoExpandedTopics.inc();
-                        _numAutoExpandedTopicPartitions.inc(mismatchedPartitions);
-                        _helixMirrorMakerManager.expandTopicInMirrorMaker(tp);
-                    } else {
-                        numMismatchedTopicPartitions += mismatchedPartitions;
-                        misMatchedPartitionNumberTopics.put(topic, mismatchedPartitions);
-                        LOGGER.warn(
-                                "Number of partitions not matched for topic {} between mirrormaker:{} and source kafka broker: {}!",
-                                topic, numPartitionsInMirrorMaker, tp.getPartition());
-                    }
-                }
-            }
-        }
-        JSONObject mismatchedTopicPartitionsJson =
-                constructMismatchedTopicPartitionsJson(misMatchedPartitionNumberTopics);
-        JSONObject validationResultJson = constructValidationResultJson(notExistedTopics.size(),
-                misMatchedPartitionNumberTopics.size(),
-                numMismatchedTopicPartitions, mismatchedTopicPartitionsJson);
-        if (_helixMirrorMakerManager.isLeader()) {
-            updateMetrics(notExistedTopics.size(), misMatchedPartitionNumberTopics.size(),
-                    numMismatchedTopicPartitions, misMatchedPartitionNumberTopics);
-        }
-        return validationResultJson.toJSONString();
+  public void stop() {
+    _executorService.shutdown();
+    try {
+      _executorService.awaitTermination(STOP_TIMEOUT_SEC, TimeUnit.SECONDS);
+    } catch (InterruptedException e) {
+      LOGGER.info("Stop SourceKafkaClusterValidationManager got interrupted");
     }
+    _executorService.shutdownNow();
+  }
+
+  public String validateSourceKafkaCluster() {
+    Set<String> notExistedTopics = new HashSet<String>();
+    Map<String, Integer> misMatchedPartitionNumberTopics = new HashMap<String, Integer>();
+    int numMismatchedTopicPartitions = 0;
+    for (String topic : _helixMirrorMakerManager.getTopicLists()) {
+      TopicPartition tp = _sourceKafkaTopicObserver.getTopicPartition(topic);
+      if (tp == null) {
+        LOGGER.warn("Topic {} is not in source kafka broker!", topic);
+        notExistedTopics.add(topic);
+      } else {
+        int numPartitionsInMirrorMaker =
+            _helixMirrorMakerManager.getIdealStateForTopic(topic).getNumPartitions();
+        if (numPartitionsInMirrorMaker != tp.getPartition()) {
+          int mismatchedPartitions = Math.abs(numPartitionsInMirrorMaker - tp.getPartition());
+          if (_enableAutoTopicExpansion && (tp.getPartition() > numPartitionsInMirrorMaker)) {
+            // Only do topic expansion
+            LOGGER.warn(
+                "Trying to expand topic {} from {} partitions in mirror maker to {} from source kafka broker!",
+                topic, numPartitionsInMirrorMaker, tp.getPartition());
+            _numAutoExpandedTopics.inc();
+            _numAutoExpandedTopicPartitions.inc(mismatchedPartitions);
+            _helixMirrorMakerManager.expandTopicInMirrorMaker(tp);
+          } else {
+            numMismatchedTopicPartitions += mismatchedPartitions;
+            misMatchedPartitionNumberTopics.put(topic, mismatchedPartitions);
+            LOGGER.warn(
+                "Number of partitions not matched for topic {} between mirrormaker:{} and source kafka broker: {}!",
+                topic, numPartitionsInMirrorMaker, tp.getPartition());
+          }
+        }
+      }
+    }
+    JSONObject mismatchedTopicPartitionsJson =
+        constructMismatchedTopicPartitionsJson(misMatchedPartitionNumberTopics);
+    JSONObject validationResultJson = constructValidationResultJson(notExistedTopics.size(),
+        misMatchedPartitionNumberTopics.size(),
+        numMismatchedTopicPartitions, mismatchedTopicPartitionsJson);
+    if (_helixMirrorMakerManager.isLeader()) {
+      updateMetrics(notExistedTopics.size(), misMatchedPartitionNumberTopics.size(),
+          numMismatchedTopicPartitions, misMatchedPartitionNumberTopics);
+    }
+    return validationResultJson.toJSONString();
+  }
 
     private void registerMetrics() {
         try {

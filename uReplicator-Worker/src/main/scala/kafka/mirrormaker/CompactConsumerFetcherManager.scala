@@ -15,13 +15,14 @@
  */
 package kafka.mirrormaker
 
+import java.util.Date
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger}
 import java.util.concurrent.locks.ReentrantLock
 
 import com.yammer.metrics.core.Gauge
 import kafka.client.ClientUtils
-import kafka.cluster.{BrokerEndPoint, Cluster}
+import kafka.cluster.{BrokerEndPoint}
 import kafka.common.TopicAndPartition
 import kafka.consumer.ConsumerConfig
 import kafka.metrics.KafkaMetricsGroup
@@ -32,7 +33,7 @@ import org.I0Itec.zkclient.ZkClient
 import org.apache.kafka.common.utils.Utils
 
 import scala.collection.mutable.HashMap
-import scala.collection.{JavaConversions, Map, Set, mutable}
+import scala.collection.{JavaConversions, Map, Seq, Set, mutable}
 
 /**
  * CompactConsumerFetcherManager uses LeaderFinderThread to handle the partition addition, deletion and leader change.
@@ -46,7 +47,8 @@ import scala.collection.{JavaConversions, Map, Set, mutable}
  */
 class CompactConsumerFetcherManager(private val consumerIdString: String,
                                     private val config: ConsumerConfig,
-                                    private val zkClient: ZkClient)
+                                    private val zkClient: ZkClient,
+                                    private val brokerListStr: String)
   extends Logging with KafkaMetricsGroup {
   protected val name: String = "CompactConsumerFetcherManager-%d".format(System.currentTimeMillis)
   private val clientId: String = config.clientId
@@ -61,11 +63,12 @@ class CompactConsumerFetcherManager(private val consumerIdString: String,
   private val partitionDeleteMap = new ConcurrentHashMap[TopicAndPartition, Boolean]
   private val partitionNewLeaderMap = new ConcurrentHashMap[TopicAndPartition, Boolean]
   private val updateMapLock = new ReentrantLock
-  private var cluster: Cluster = null
   private val noLeaderPartitionSet = new mutable.HashSet[TopicAndPartition]
   private val lock = new ReentrantLock
   private var leaderFinderThread: ShutdownableThread = null
   private val correlationId = new AtomicInteger(0)
+
+  val systemExisting = new AtomicBoolean(false)
 
   newGauge("OwnedPartitionsCount",
     new Gauge[Int] {
@@ -88,6 +91,20 @@ class CompactConsumerFetcherManager(private val consumerIdString: String,
   )
 
   newGauge(
+    "TotalLag",
+    new Gauge[Long] {
+      // current total lag across all fetchers/topics/partitions
+      def value = fetcherThreadMap.foldLeft(0L)((curTotalAll, fetcherThreadMapEntry) => {
+        fetcherThreadMapEntry._2.fetcherLagStats.stats.foldLeft(0L)((curTotalThread, fetcherLagStatsEntry) => {
+          curTotalThread + fetcherLagStatsEntry._2.lag
+        }) + curTotalAll
+      })
+    },
+    Map("clientId" -> clientId)
+  )
+
+
+  newGauge(
     "MinFetchRate", {
       new Gauge[Double] {
         // current min fetch rate across all fetchers/topics/partitions
@@ -103,6 +120,14 @@ class CompactConsumerFetcherManager(private val consumerIdString: String,
     },
     Map("clientId" -> clientId)
   )
+
+  private def removeCustomizedMetrics() {
+    removeMetric("OwnedPartitionsCount", Map("clientId" -> clientId))
+    removeMetric("MaxLag", Map("clientId" -> clientId))
+    removeMetric("TotalLag", Map("clientId" -> clientId))
+    removeMetric("MinFetchRate", Map("clientId" -> clientId))
+    trace("Removed metrics: OwnedPartitionsCount, MaxLag, MinFetchRate for clientId=" + clientId)
+  }
 
   private def getFetcherId(topic: String, partitionId: Int): Int = {
     Utils.abs(31 * topic.hashCode() + partitionId) % numFetchers
@@ -162,18 +187,21 @@ class CompactConsumerFetcherManager(private val consumerIdString: String,
   def closeAllFetchers() {
     mapLock synchronized {
       for ((_, fetcher) <- fetcherThreadMap) {
-        fetcher.shutdown()
+        if (fetcher.isOOM) {
+          info("%s got OOM, skip shutdown".format(fetcher.name))
+        } else {
+          fetcher.shutdown()
+        }
       }
       fetcherThreadMap.clear()
     }
   }
 
-  def startConnections(topicInfos: Iterable[PartitionTopicInfo], cluster: Cluster) {
+  def startConnections(topicInfos: Iterable[PartitionTopicInfo]) {
     inLock(updateMapLock) {
       topicInfos.foreach(tpi => partitionAddMap.put(TopicAndPartition(tpi.topic, tpi.partitionId), tpi))
     }
     debug("Initializing partition(add) map to : " + partitionAddMap.keySet.toString())
-    this.cluster = cluster
     leaderFinderThread = new LeaderFinderThread(consumerIdString + "-leader-finder-thread")
     leaderFinderThread.start()
   }
@@ -199,6 +227,8 @@ class CompactConsumerFetcherManager(private val consumerIdString: String,
     partitionAddMap.clear()
     partitionDeleteMap.clear()
     partitionNewLeaderMap.clear()
+
+    removeCustomizedMetrics()
 
     info("All connections stopped")
   }
@@ -310,14 +340,18 @@ class CompactConsumerFetcherManager(private val consumerIdString: String,
         }
 
         info("Partitions without leader %s".format(noLeaderPartitionSet))
-        val brokers = ClientUtils.getPlaintextBrokerEndPoints(ZkUtils.apply(zkClient, true))
+        var start = new Date().getTime
+        val brokers = if (brokerListStr == null || brokerListStr.isEmpty) {
+          ClientUtils.getPlaintextBrokerEndPoints(ZkUtils.apply(zkClient, true))
+        } else {
+          ClientUtils.parseBrokerList(brokerListStr)
+        }
 
         val topicsMetadata = ClientUtils.fetchTopicMetadata(noLeaderPartitionSet.map(m => m.topic).toSet,
           brokers,
           config.clientId,
           config.socketTimeoutMs,
           correlationId.getAndIncrement).topicsMetadata
-        if (logger.isDebugEnabled) topicsMetadata.foreach(topicMetadata => debug(topicMetadata.toString()))
         topicsMetadata.foreach { tmd =>
           val topic = tmd.topic
           tmd.partitionsMetadata.foreach { pmd =>
@@ -329,10 +363,12 @@ class CompactConsumerFetcherManager(private val consumerIdString: String,
               noLeaderPartitionSet -= topicAndPartition
             }
           }
+          debug(tmd.toString())
         }
+        info("Find leader for partitions finished, took: %d ms".format(new Date().getTime - start))
       } catch {
         case t: Throwable => {
-          if (!isRunning.get())
+          if (!isRunning)
             throw t /* If this thread is stopped, propagate this exception to kill the thread. */
           else
             warn("Failed to find leader for %s".format(noLeaderPartitionSet), t)
@@ -348,7 +384,7 @@ class CompactConsumerFetcherManager(private val consumerIdString: String,
         })
       } catch {
         case t: Throwable => {
-          if (!isRunning.get())
+          if (!isRunning)
             throw t /* If this thread is stopped, propagate this exception to kill the thread. */
           else {
             warn("Failed to add leader for partitions %s; will retry".format(leaderForPartitionsMap.keySet.mkString(",")), t)

@@ -41,8 +41,9 @@ import java.util.concurrent.TimeUnit;
 // TODO: 2018/5/2 by zmyer
 public class AutoTopicWhitelistingManager {
 
-    private static final Logger LOGGER =
-            LoggerFactory.getLogger(AutoTopicWhitelistingManager.class);
+  private static final Logger LOGGER =
+      LoggerFactory.getLogger(AutoTopicWhitelistingManager.class);
+  private static final int STOP_TIMEOUT_SEC = 5;
 
     private final HelixMirrorMakerManager _helixMirrorMakerManager;
     private final ScheduledExecutorService _executorService =
@@ -142,14 +143,23 @@ public class AutoTopicWhitelistingManager {
         }, Math.min(_initWaitTimeInSec, _refreshTimeInSec), _refreshTimeInSec, _timeUnit);
     }
 
-    // TODO: 2018/6/15 by zmyer
-    private void maybeCreateZkPath(String path) {
-        try {
-            _zkClient.createPersistent(path, true);
-        } catch (ZkNodeExistsException e) {
-            LOGGER.debug("Path={} is created in zk already", path);
-        }
+  public void stop() {
+    _executorService.shutdown();
+    try {
+      _executorService.awaitTermination(STOP_TIMEOUT_SEC, TimeUnit.SECONDS);
+    } catch (InterruptedException e) {
+      LOGGER.info("Stop AutoTopicWhitelistingManager got interrupted");
     }
+    _executorService.shutdownNow();
+  }
+
+  private void maybeCreateZkPath(String path) {
+    try {
+      _zkClient.createPersistent(path, true);
+    } catch (ZkNodeExistsException e) {
+      LOGGER.debug("Path={} is created in zk already", path);
+    }
+  }
 
     // TODO: 2018/6/15 by zmyer
     private Set<String> getCandidateTopicsToWhitelist() {

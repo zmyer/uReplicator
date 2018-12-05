@@ -5,9 +5,11 @@ import com.alibaba.fastjson.JSONObject;
 import com.uber.stream.kafka.mirrormaker.controller.core.AutoTopicWhitelistingManager;
 import com.uber.stream.kafka.mirrormaker.controller.core.HelixMirrorMakerManager;
 import com.uber.stream.kafka.mirrormaker.controller.core.KafkaBrokerTopicObserver;
+import com.uber.stream.kafka.mirrormaker.controller.core.ManagerControllerHelix;
 import com.uber.stream.kafka.mirrormaker.controller.core.TopicPartition;
 import org.apache.helix.model.ExternalView;
 import org.apache.helix.model.IdealState;
+import org.restlet.data.Form;
 import org.restlet.data.MediaType;
 import org.restlet.data.Status;
 import org.restlet.representation.Representation;
@@ -37,195 +39,261 @@ public class TopicManagementRestletResource extends ServerResource {
     private static final Logger LOGGER =
             LoggerFactory.getLogger(TopicManagementRestletResource.class);
 
-    private final HelixMirrorMakerManager _helixMirrorMakerManager;
-    private final AutoTopicWhitelistingManager _autoTopicWhitelistingManager;
-    private final KafkaBrokerTopicObserver _srcKafkaBrokerTopicObserver;
+  private final ManagerControllerHelix _managerControllerHelix;
+  private final HelixMirrorMakerManager _helixMirrorMakerManager;
+  private final AutoTopicWhitelistingManager _autoTopicWhitelistingManager;
+  private final KafkaBrokerTopicObserver _srcKafkaBrokerTopicObserver;
 
-    public TopicManagementRestletResource() {
-        getVariants().add(new Variant(MediaType.TEXT_PLAIN));
-        getVariants().add(new Variant(MediaType.APPLICATION_JSON));
-        setNegotiated(false);
-        _helixMirrorMakerManager = (HelixMirrorMakerManager) getApplication().getContext()
-                .getAttributes().get(HelixMirrorMakerManager.class.toString());
-        _autoTopicWhitelistingManager = (AutoTopicWhitelistingManager) getApplication().getContext()
-                .getAttributes().get(AutoTopicWhitelistingManager.class.toString());
-        if (getApplication().getContext().getAttributes()
-                .containsKey(KafkaBrokerTopicObserver.class.toString())) {
-            _srcKafkaBrokerTopicObserver = (KafkaBrokerTopicObserver) getApplication().getContext()
-                    .getAttributes().get(KafkaBrokerTopicObserver.class.toString());
+  public TopicManagementRestletResource() {
+    getVariants().add(new Variant(MediaType.TEXT_PLAIN));
+    getVariants().add(new Variant(MediaType.APPLICATION_JSON));
+    setNegotiated(false);
+    _managerControllerHelix = (ManagerControllerHelix) getApplication().getContext()
+        .getAttributes().get(ManagerControllerHelix.class.toString());
+    _helixMirrorMakerManager = (HelixMirrorMakerManager) getApplication().getContext()
+        .getAttributes().get(HelixMirrorMakerManager.class.toString());
+    _autoTopicWhitelistingManager = (AutoTopicWhitelistingManager) getApplication().getContext()
+        .getAttributes().get(AutoTopicWhitelistingManager.class.toString());
+    if (getApplication().getContext().getAttributes()
+        .containsKey(KafkaBrokerTopicObserver.class.toString())) {
+      _srcKafkaBrokerTopicObserver = (KafkaBrokerTopicObserver) getApplication().getContext()
+          .getAttributes().get(KafkaBrokerTopicObserver.class.toString());
+    } else {
+      _srcKafkaBrokerTopicObserver = null;
+    }
+  }
+
+  @Override
+  @Get
+  public Representation get() {
+    final String topicName = (String) getRequest().getAttributes().get("topicName");
+    if (topicName == null) {
+      List<String> topicLists = _helixMirrorMakerManager.getTopicLists();
+      if (topicLists == null || topicLists.isEmpty()) {
+        return new StringRepresentation("No topic is added in MirrorMaker Controller!");
+      } else {
+        return new StringRepresentation(String
+            .format("Current serving topics: %s", Arrays.toString(topicLists.toArray())));
+      }
+    }
+    try {
+      if (_helixMirrorMakerManager.isTopicExisted(topicName)) {
+        IdealState idealStateForTopic =
+            _helixMirrorMakerManager.getIdealStateForTopic(topicName);
+        ExternalView externalViewForTopic =
+            _helixMirrorMakerManager.getExternalViewForTopic(topicName);
+        JSONObject responseJson = new JSONObject();
+        responseJson.put("topic", topicName);
+        JSONObject externalViewPartitionToServerMappingJson = new JSONObject();
+        if (externalViewForTopic == null) {
+          LOGGER.info("External view for topic " + topicName + " is NULL");
         } else {
-            _srcKafkaBrokerTopicObserver = null;
-        }
-    }
-
-    @Override
-    @Get
-    public Representation get() {
-        final String topicName = (String) getRequest().getAttributes().get("topicName");
-        if (topicName == null) {
-            List<String> topicLists = _helixMirrorMakerManager.getTopicLists();
-            if (topicLists == null || topicLists.isEmpty()) {
-                return new StringRepresentation("No topic is added in MirrorMaker Controller!");
-            } else {
-                return new StringRepresentation(String
-                        .format("Current serving topics: %s", Arrays.toString(topicLists.toArray())));
+          for (String partition : externalViewForTopic.getPartitionSet()) {
+            Map<String, String> stateMap = externalViewForTopic.getStateMap(partition);
+            for (String server : stateMap.keySet()) {
+              if (!externalViewPartitionToServerMappingJson.containsKey(partition)) {
+                externalViewPartitionToServerMappingJson.put(partition, new JSONArray());
+              }
+              externalViewPartitionToServerMappingJson.getJSONArray(partition).add(server);
             }
+          }
         }
-        try {
-            if (_helixMirrorMakerManager.isTopicExisted(topicName)) {
-                IdealState idealStateForTopic =
-                        _helixMirrorMakerManager.getIdealStateForTopic(topicName);
-                ExternalView externalViewForTopic =
-                        _helixMirrorMakerManager.getExternalViewForTopic(topicName);
-                JSONObject responseJson = new JSONObject();
-                responseJson.put("topic", topicName);
-                JSONObject externalViewPartitionToServerMappingJson = new JSONObject();
-                for (String partition : externalViewForTopic.getPartitionSet()) {
-                    Map<String, String> stateMap = externalViewForTopic.getStateMap(partition);
-                    for (String server : stateMap.keySet()) {
-                        if (!externalViewPartitionToServerMappingJson.containsKey(partition)) {
-                            externalViewPartitionToServerMappingJson.put(partition, new JSONArray());
-                        }
-                        externalViewPartitionToServerMappingJson.getJSONArray(partition).add(server);
-                    }
+        responseJson.put("externalView", externalViewPartitionToServerMappingJson);
+
+        JSONObject idealStatePartitionToServerMappingJson = new JSONObject();
+        if (idealStateForTopic == null) {
+          LOGGER.info("Ideal state for topic " + topicName + " is NULL");
+        } else {
+          for (String partition : idealStateForTopic.getPartitionSet()) {
+            Map<String, String> stateMap = idealStateForTopic.getInstanceStateMap(partition);
+            if (stateMap != null) {
+              for (String server : stateMap.keySet()) {
+                if (!idealStatePartitionToServerMappingJson.containsKey(partition)) {
+                  idealStatePartitionToServerMappingJson.put(partition, new JSONArray());
                 }
-                responseJson.put("externalView", externalViewPartitionToServerMappingJson);
+                idealStatePartitionToServerMappingJson.getJSONArray(partition).add(server);
+              }
+            }
+          }
+        }
+        responseJson.put("idealState", idealStatePartitionToServerMappingJson);
+        Map<String, List<String>> serverToPartitionMapping = new HashMap<String, List<String>>();
+        JSONObject serverToPartitionMappingJson = new JSONObject();
+        JSONObject serverToNumPartitionsMappingJson = new JSONObject();
 
-                JSONObject idealStatePartitionToServerMappingJson = new JSONObject();
-                for (String partition : idealStateForTopic.getPartitionSet()) {
-                    Map<String, String> stateMap = idealStateForTopic.getInstanceStateMap(partition);
-                    if (stateMap != null) {
-                        for (String server : stateMap.keySet()) {
-                            if (!idealStatePartitionToServerMappingJson.containsKey(partition)) {
-                                idealStatePartitionToServerMappingJson.put(partition, new JSONArray());
-                            }
-                            idealStatePartitionToServerMappingJson.getJSONArray(partition).add(server);
-                        }
-                    }
+        if (externalViewForTopic != null) {
+          for (String partition : externalViewForTopic.getPartitionSet()) {
+            Map<String, String> stateMap = externalViewForTopic.getStateMap(partition);
+            for (String server : stateMap.keySet()) {
+              if (stateMap.get(server).equals("ONLINE")) {
+                if (!serverToPartitionMapping.containsKey(server)) {
+                  serverToPartitionMapping.put(server, new ArrayList<String>());
+                  serverToPartitionMappingJson.put(server, new JSONArray());
+                  serverToNumPartitionsMappingJson.put(server, 0);
                 }
-                responseJson.put("idealState", idealStatePartitionToServerMappingJson);
-                Map<String, List<String>> serverToPartitionMapping = new HashMap<String, List<String>>();
-                JSONObject serverToPartitionMappingJson = new JSONObject();
-                JSONObject serverToNumPartitionsMappingJson = new JSONObject();
-
-                for (String partition : externalViewForTopic.getPartitionSet()) {
-                    Map<String, String> stateMap = externalViewForTopic.getStateMap(partition);
-                    for (String server : stateMap.keySet()) {
-                        if (stateMap.get(server).equals("ONLINE")) {
-                            if (!serverToPartitionMapping.containsKey(server)) {
-                                serverToPartitionMapping.put(server, new ArrayList<String>());
-                                serverToPartitionMappingJson.put(server, new JSONArray());
-                                serverToNumPartitionsMappingJson.put(server, 0);
-                            }
-                            serverToPartitionMapping.get(server).add(partition);
-                            serverToPartitionMappingJson.getJSONArray(server).add(partition);
-                            serverToNumPartitionsMappingJson.put(server,
-                                    serverToNumPartitionsMappingJson.getInteger(server) + 1);
-                        }
-                    }
-                }
-                responseJson.put("serverToPartitionMapping", serverToPartitionMappingJson);
-                responseJson.put("serverToNumPartitionsMapping", serverToNumPartitionsMappingJson);
-                return new StringRepresentation(responseJson.toJSONString());
-            } else {
-                getResponse().setStatus(Status.CLIENT_ERROR_NOT_FOUND);
-                return new StringRepresentation(String
-                        .format("Failed to get ExternalView for topic: %s, it is not existed!", topicName));
+                serverToPartitionMapping.get(server).add(partition);
+                serverToPartitionMappingJson.getJSONArray(server).add(partition);
+                serverToNumPartitionsMappingJson.put(server,
+                    serverToNumPartitionsMappingJson.getInteger(server) + 1);
+              }
             }
-        } catch (Exception e) {
-            LOGGER.error("Got error during processing Get request", e);
-            getResponse().setStatus(Status.SERVER_ERROR_INTERNAL);
-            return new StringRepresentation(String
-                    .format("Failed to get ExternalView for topic: %s, with exception: %s", topicName, e));
+          }
         }
+        responseJson.put("serverToPartitionMapping", serverToPartitionMappingJson);
+        responseJson.put("serverToNumPartitionsMapping", serverToNumPartitionsMappingJson);
+        return new StringRepresentation(responseJson.toJSONString());
+      } else {
+        getResponse().setStatus(Status.CLIENT_ERROR_NOT_FOUND);
+        return new StringRepresentation(String
+            .format("Failed to get ExternalView for topic: %s, it is not existed!", topicName));
+      }
+    } catch (Exception e) {
+      LOGGER.error("Got error during processing Get request", e);
+      getResponse().setStatus(Status.SERVER_ERROR_INTERNAL);
+      return new StringRepresentation(String
+          .format("Failed to get ExternalView for topic: %s, with exception: %s", topicName, e));
+    }
+  }
+
+  @Override
+  @Post("json")
+  public Representation post(Representation entity) {
+    try {
+      final String topicName = (String) getRequest().getAttributes().get("topicName");
+      LOGGER.info("received request to whitelist topic {} on mm ", topicName);
+      if (_managerControllerHelix != null) {
+        // federated mode
+        Form params = getRequest().getResourceRef().getQueryAsForm();
+        String srcCluster = params.getFirstValue("src");
+        String dstCluster = params.getFirstValue("dst");
+        String routeId = params.getFirstValue("routeid");
+        if (srcCluster == null || dstCluster == null || routeId == null) {
+          getResponse().setStatus(Status.CLIENT_ERROR_BAD_REQUEST);
+          return new StringRepresentation("Missing parameters for whitelisting topic " + topicName
+              + " in federated uReplicator");
+        }
+        if (!_managerControllerHelix.handleTopicAssignmentEvent(topicName, srcCluster, dstCluster, routeId, "ONLINE")) {
+          getResponse().setStatus(Status.CLIENT_ERROR_BAD_REQUEST);
+          String resp = String.format("Failed to add new topic: %s, src=%s, dst=%s, routeid=%s",
+              topicName, srcCluster, dstCluster, routeId);
+          LOGGER.info(resp);
+          return new StringRepresentation(resp);
+        }
+        String resp = String.format("Successfully add new topic: %s, src=%s, dst=%s, routeid=%s",
+            topicName, srcCluster, dstCluster, routeId);
+        LOGGER.info(resp);
+        return new StringRepresentation(resp);
+      }
+
+      String jsonRequest = entity.getText();
+      TopicPartition topicPartitionInfo = null;
+      if ((jsonRequest == null || jsonRequest.isEmpty()) && topicName != null
+          && _srcKafkaBrokerTopicObserver != null) {
+        // Only triggered when srcKafkaObserver is there and curl call has no json blob.
+        topicPartitionInfo = _srcKafkaBrokerTopicObserver.getTopicPartitionWithRefresh(topicName);
+        if (topicPartitionInfo == null) {
+          LOGGER.warn("failed to whitelist topic {} on mm because of not exists in src cluster", topicName);
+          getResponse().setStatus(Status.CLIENT_ERROR_BAD_REQUEST);
+          return new StringRepresentation(String.format(
+              "Failed to add new topic: %s, it's not exsited in source kafka cluster!", topicName));
+        }
+      } else {
+        topicPartitionInfo = TopicPartition.init(jsonRequest);
+      }
+      if (_autoTopicWhitelistingManager != null) {
+        _autoTopicWhitelistingManager.removeFromBlacklist(topicPartitionInfo.getTopic());
+      }
+      if (_helixMirrorMakerManager.isTopicExisted(topicPartitionInfo.getTopic())) {
+        LOGGER.info("topic {} already on mm", topicName);
+        getResponse().setStatus(Status.CLIENT_ERROR_NOT_FOUND);
+        return new StringRepresentation(String.format(
+            "Failed to add new topic: %s, it is already existed!", topicPartitionInfo.getTopic()));
+      } else {
+        _helixMirrorMakerManager.addTopicToMirrorMaker(topicPartitionInfo);
+        LOGGER.info("successuflly whitelist the topic {}", topicName);
+        return new StringRepresentation(
+            String.format("Successfully add new topic: %s", topicPartitionInfo));
+      }
+    } catch (IOException e) {
+      LOGGER.error("Got error during processing Post request", e);
+      getResponse().setStatus(Status.SERVER_ERROR_INTERNAL);
+      return new StringRepresentation(
+          String.format("Failed to add new topic, with exception: %s", e));
+    }
+  }
+
+  @Override
+  @Put("json")
+  public Representation put(Representation entity) {
+    try {
+      String jsonRequest = entity.getText();
+      TopicPartition topicPartitionInfo = TopicPartition.init(jsonRequest);
+      if (_autoTopicWhitelistingManager != null) {
+        _autoTopicWhitelistingManager.removeFromBlacklist(topicPartitionInfo.getTopic());
+      }
+      if (_helixMirrorMakerManager.isTopicExisted(topicPartitionInfo.getTopic())) {
+        _helixMirrorMakerManager.expandTopicInMirrorMaker(topicPartitionInfo);
+        return new StringRepresentation(
+            String.format("Successfully expand topic: %s", topicPartitionInfo));
+      } else {
+        getResponse().setStatus(Status.CLIENT_ERROR_NOT_FOUND);
+        return new StringRepresentation(String.format(
+            "Failed to expand topic, topic: %s is not existed!", topicPartitionInfo.getTopic()));
+      }
+    } catch (Exception e) {
+      LOGGER.error("Got error during processing Put request", e);
+      getResponse().setStatus(Status.SERVER_ERROR_INTERNAL);
+      return new StringRepresentation(
+          String.format("Failed to expand topic, with exception: %s", e));
+    }
+  }
+
+  @Override
+  @Delete
+  public Representation delete() {
+    final String topicName = (String) getRequest().getAttributes().get("topicName");
+    if (_managerControllerHelix != null) {
+      // federated mode
+      Form params = getRequest().getResourceRef().getQueryAsForm();
+      String srcCluster = params.getFirstValue("src");
+      String dstCluster = params.getFirstValue("dst");
+      String routeId = params.getFirstValue("routeid");
+      if (srcCluster == null || dstCluster == null || routeId == null) {
+        getResponse().setStatus(Status.CLIENT_ERROR_BAD_REQUEST);
+        return new StringRepresentation("Missing parameters for blacklisting topic " + topicName
+            + " in federated uReplicator");
+      }
+      if (!_managerControllerHelix.handleTopicAssignmentEvent(topicName, srcCluster, dstCluster, routeId, "OFFLINE")) {
+        getResponse().setStatus(Status.CLIENT_ERROR_BAD_REQUEST);
+        String resp = String.format("Failed to blacklist topic: %s, src=%s, dst=%s, routeid=%s",
+            topicName, srcCluster, dstCluster, routeId);
+        LOGGER.info(resp);
+        return new StringRepresentation(resp);
+      }
+      String resp = String.format("Successfully blacklisted topic: %s, src=%s, dst=%s, routeid=%s",
+          topicName, srcCluster, dstCluster, routeId);
+      LOGGER.info(resp);
+      return new StringRepresentation(resp);
     }
 
-    @Override
-    @Post("json")
-    public Representation post(Representation entity) {
-        try {
-            final String topicName = (String) getRequest().getAttributes().get("topicName");
-            String jsonRequest = entity.getText();
-            TopicPartition topicPartitionInfo = null;
-            if ((jsonRequest == null || jsonRequest.isEmpty()) && topicName != null
-                    && _srcKafkaBrokerTopicObserver != null) {
-                // Only triggered when srcKafkaObserver is there and curl call has no json blob.
-                topicPartitionInfo = _srcKafkaBrokerTopicObserver.getTopicPartition(topicName);
-                if (topicPartitionInfo == null) {
-                    return new StringRepresentation(String.format(
-                            "Failed to add new topic: %s, it's not exsited in source kafka cluster!", topicName));
-                }
-            } else {
-                topicPartitionInfo = TopicPartition.init(jsonRequest);
-            }
-            if (_autoTopicWhitelistingManager != null) {
-                _autoTopicWhitelistingManager.removeFromBlacklist(topicPartitionInfo.getTopic());
-            }
-            if (_helixMirrorMakerManager.isTopicExisted(topicPartitionInfo.getTopic())) {
-                getResponse().setStatus(Status.CLIENT_ERROR_NOT_FOUND);
-                return new StringRepresentation(String.format(
-                        "Failed to add new topic: %s, it is already existed!", topicPartitionInfo.getTopic()));
-            } else {
-                _helixMirrorMakerManager.addTopicToMirrorMaker(topicPartitionInfo);
-                return new StringRepresentation(
-                        String.format("Successfully add new topic: %s", topicPartitionInfo));
-            }
-        } catch (IOException e) {
-            LOGGER.error("Got error during processing Post request", e);
-            getResponse().setStatus(Status.SERVER_ERROR_INTERNAL);
-            return new StringRepresentation(
-                    String.format("Failed to add new topic, with exception: %s", e));
-        }
+    if (_autoTopicWhitelistingManager != null) {
+      _autoTopicWhitelistingManager.addIntoBlacklist(topicName);
     }
-
-    @Override
-    @Put("json")
-    public Representation put(Representation entity) {
-        try {
-            String jsonRequest = entity.getText();
-            TopicPartition topicPartitionInfo = TopicPartition.init(jsonRequest);
-            if (_autoTopicWhitelistingManager != null) {
-                _autoTopicWhitelistingManager.removeFromBlacklist(topicPartitionInfo.getTopic());
-            }
-            if (_helixMirrorMakerManager.isTopicExisted(topicPartitionInfo.getTopic())) {
-                _helixMirrorMakerManager.expandTopicInMirrorMaker(topicPartitionInfo);
-                return new StringRepresentation(
-                        String.format("Successfully expand topic: %s", topicPartitionInfo));
-            } else {
-                getResponse().setStatus(Status.CLIENT_ERROR_NOT_FOUND);
-                return new StringRepresentation(String.format(
-                        "Failed to expand topic, topic: %s is not existed!", topicPartitionInfo.getTopic()));
-            }
-        } catch (IOException e) {
-            LOGGER.error("Got error during processing Put request", e);
-            getResponse().setStatus(Status.SERVER_ERROR_INTERNAL);
-            return new StringRepresentation(
-                    String.format("Failed to expand topic, with exception: %s", e));
-        }
+    if (!_helixMirrorMakerManager.isTopicExisted(topicName)) {
+      getResponse().setStatus(Status.CLIENT_ERROR_NOT_FOUND);
+      return new StringRepresentation(
+          String.format("Failed to delete not existed topic: %s", topicName));
     }
-
-    @Override
-    @Delete
-    public Representation delete() {
-        final String topicName = (String) getRequest().getAttributes().get("topicName");
-        if (_autoTopicWhitelistingManager != null) {
-            _autoTopicWhitelistingManager.addIntoBlacklist(topicName);
-        }
-        if (!_helixMirrorMakerManager.isTopicExisted(topicName)) {
-            getResponse().setStatus(Status.CLIENT_ERROR_NOT_FOUND);
-            return new StringRepresentation(
-                    String.format("Failed to delete not existed topic: %s", topicName));
-        }
-        try {
-            _helixMirrorMakerManager.deleteTopicInMirrorMaker(topicName);
-            return new StringRepresentation(
-                    String.format("Successfully finished delete topic: %s", topicName));
-        } catch (Exception e) {
-            getResponse().setStatus(Status.SERVER_ERROR_INTERNAL);
-            LOGGER.error("Failed to delete topic: {}, with exception: {}", topicName, e);
-            return new StringRepresentation(
-                    String.format("Failed to delete topic: %s, with exception: %s", topicName, e));
-        }
+    try {
+      _helixMirrorMakerManager.deleteTopicInMirrorMaker(topicName);
+      return new StringRepresentation(
+          String.format("Successfully finished delete topic: %s", topicName));
+    } catch (Exception e) {
+      getResponse().setStatus(Status.SERVER_ERROR_INTERNAL);
+      LOGGER.error("Failed to delete topic: {}, with exception: {}", topicName, e);
+      return new StringRepresentation(
+          String.format("Failed to delete topic: %s, with exception: %s", topicName, e));
     }
+  }
 
 }

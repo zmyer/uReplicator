@@ -16,8 +16,8 @@
 package com.uber.stream.kafka.mirrormaker.controller.utils;
 
 import com.google.common.collect.ImmutableList;
+import com.uber.stream.kafka.mirrormaker.common.core.OnlineOfflineStateModel;
 import com.uber.stream.kafka.mirrormaker.controller.core.InstanceTopicPartitionHolder;
-import com.uber.stream.kafka.mirrormaker.controller.core.OnlineOfflineStateModel;
 import com.uber.stream.kafka.mirrormaker.controller.core.TopicPartition;
 import org.apache.commons.lang.StringUtils;
 import org.apache.helix.HelixAdmin;
@@ -71,39 +71,31 @@ public class HelixUtils {
         return ImmutableList.copyOf(helixDataAccessor.getChildNames(liveInstancesKey));
     }
 
-    /**
-     * From IdealStates.
-     *
-     * @return InstanceToNumTopicPartitionMap
-     */
-    // TODO: 2018/5/2 by zmyer
-    public static Map<String, Set<TopicPartition>> getInstanceToTopicPartitionsMap(
-            HelixManager helixManager) {
-        Map<String, Set<TopicPartition>> instanceToNumTopicPartitionMap =
-                new HashMap<String, Set<TopicPartition>>();
-        //读取helix管理器
-        HelixAdmin helixAdmin = helixManager.getClusterManagmentTool();
-        //读取helix集群名称
-        String helixClusterName = helixManager.getClusterName();
-        for (String topic : helixAdmin.getResourcesInCluster(helixClusterName)) {
-            //根据集群名称和topic信息，获取具体的实例的状态信息
-            IdealState is = helixAdmin.getResourceIdealState(helixClusterName, topic);
-            for (String partition : is.getPartitionSet()) {
-                //创建topic分区对象
-                TopicPartition tpi = new TopicPartition(topic, Integer.parseInt(partition));
-                for (String instance : is.getInstanceSet(partition)) {
-                    if (!instanceToNumTopicPartitionMap.containsKey(instance)) {
-                        //创建实体对应的topic分区列表
-                        instanceToNumTopicPartitionMap.put(instance, new HashSet<TopicPartition>());
-                    }
-                    //将对应的分区信息插入到实体对应的分区列表中
-                    instanceToNumTopicPartitionMap.get(instance).add(tpi);
-                }
-            }
+  /**
+   * From IdealStates.
+   *
+   * @return InstanceToNumTopicPartitionMap
+   */
+  public static Map<String, Set<TopicPartition>> getInstanceToTopicPartitionsMap(
+      HelixManager helixManager) {
+    Map<String, Set<TopicPartition>> instanceToNumTopicPartitionMap =
+        new HashMap<String, Set<TopicPartition>>();
+    HelixAdmin helixAdmin = helixManager.getClusterManagmentTool();
+    String helixClusterName = helixManager.getClusterName();
+    for (String topic : helixAdmin.getResourcesInCluster(helixClusterName)) {
+      IdealState is = helixAdmin.getResourceIdealState(helixClusterName, topic);
+      for (String partition : is.getPartitionSet()) {
+        TopicPartition tpi = new TopicPartition(topic, Integer.parseInt(partition));
+        for (String instance : is.getInstanceSet(partition)) {
+          if (!instanceToNumTopicPartitionMap.containsKey(instance)) {
+            instanceToNumTopicPartitionMap.put(instance, new HashSet<TopicPartition>());
+          }
+          instanceToNumTopicPartitionMap.get(instance).add(tpi);
         }
-        //返回结果
-        return instanceToNumTopicPartitionMap;
+      }
     }
+    return instanceToNumTopicPartitionMap;
+  }
 
     public static IdealState buildCustomIdealStateFor(String topicName,
             int numTopicPartitions,
@@ -128,37 +120,36 @@ public class HelixUtils {
         return customModeIdealStateBuilder.build();
     }
 
-    public static Map<String, IdealState> getIdealStatesFromAssignment(
-            Set<InstanceTopicPartitionHolder> newAssignment) {
-        Map<String, CustomModeISBuilder> idealStatesBuilderMap =
-                new HashMap<String, CustomModeISBuilder>();
-        for (InstanceTopicPartitionHolder instance : newAssignment) {
-            for (TopicPartition tpi : instance.getServingTopicPartitionSet()) {
-                String topicName = tpi.getTopic();
-                String partition = Integer.toString(tpi.getPartition());
-                if (!idealStatesBuilderMap.containsKey(topicName)) {
-                    final CustomModeISBuilder customModeIdealStateBuilder =
-                            new CustomModeISBuilder(topicName);
-                    customModeIdealStateBuilder
-                            .setStateModel(OnlineOfflineStateModel.name)
-                            .setNumReplica(1);
+  public static Map<String, IdealState> getIdealStatesFromAssignment(
+      Set<InstanceTopicPartitionHolder> newAssignment) {
+    Map<String, CustomModeISBuilder> idealStatesBuilderMap = new HashMap<>();
+    for (InstanceTopicPartitionHolder instance : newAssignment) {
+      for (TopicPartition tpi : instance.getServingTopicPartitionSet()) {
+        String topicName = tpi.getTopic();
+        String partition = Integer.toString(tpi.getPartition());
+        if (!idealStatesBuilderMap.containsKey(topicName)) {
+          final CustomModeISBuilder customModeIdealStateBuilder =
+              new CustomModeISBuilder(topicName);
+          customModeIdealStateBuilder
+              .setStateModel(OnlineOfflineStateModel.name)
+              .setNumReplica(1);
 
-                    idealStatesBuilderMap.put(topicName, customModeIdealStateBuilder);
-                }
-                idealStatesBuilderMap.get(topicName).assignInstanceAndState(partition,
-                        instance.getInstanceName(),
-                        "ONLINE");
-            }
+          idealStatesBuilderMap.put(topicName, customModeIdealStateBuilder);
         }
-        Map<String, IdealState> idealStatesMap = new HashMap<String, IdealState>();
-        for (String topic : idealStatesBuilderMap.keySet()) {
-            IdealState idealState = idealStatesBuilderMap.get(topic).build();
-            idealState.setMaxPartitionsPerInstance(idealState.getPartitionSet().size());
-            idealState.setNumPartitions(idealState.getPartitionSet().size());
-            idealStatesMap.put(topic, idealState);
-        }
-        return idealStatesMap;
+        idealStatesBuilderMap.get(topicName).assignInstanceAndState(partition,
+            instance.getInstanceName(),
+            "ONLINE");
+      }
     }
+    Map<String, IdealState> idealStatesMap = new HashMap<>();
+    for (String topic : idealStatesBuilderMap.keySet()) {
+      IdealState idealState = idealStatesBuilderMap.get(topic).build();
+      idealState.setMaxPartitionsPerInstance(idealState.getPartitionSet().size());
+      idealState.setNumPartitions(idealState.getPartitionSet().size());
+      idealStatesMap.put(topic, idealState);
+    }
+    return idealStatesMap;
+  }
 
     // TODO: 2018/5/8 by zmyer
     public static Set<TopicPartition> getUnassignedPartitions(HelixManager helixManager) {

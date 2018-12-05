@@ -15,9 +15,16 @@
  */
 package com.uber.stream.kafka.mirrormaker.controller.core;
 
+import com.uber.stream.kafka.mirrormaker.common.utils.HelixSetupUtils;
 import com.uber.stream.kafka.mirrormaker.controller.ControllerConf;
-import com.uber.stream.kafka.mirrormaker.controller.utils.HelixSetupUtils;
 import com.uber.stream.kafka.mirrormaker.controller.utils.HelixUtils;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.PriorityQueue;
+import java.util.Set;
 import org.apache.helix.HelixAdmin;
 import org.apache.helix.HelixDataAccessor;
 import org.apache.helix.HelixManager;
@@ -51,9 +58,10 @@ import java.util.Set;
 // TODO: 2018/5/2 by zmyer
 public class HelixMirrorMakerManager {
 
-    private static final String ENABLE = "enable";
-    private static final String DISABLE = "disable";
-    private static final String AUTO_BALANCING = "AutoBalancing";
+  private static final String ENABLE = "enable";
+  private static final String DISABLE = "disable";
+  private static final String AUTO_BALANCING = "AutoBalancing";
+  private static final String BLACKLIST_TAG = "blacklisted";
 
     private static final Logger LOGGER = LoggerFactory.getLogger(HelixMirrorMakerManager.class);
 
@@ -64,76 +72,89 @@ public class HelixMirrorMakerManager {
     private HelixAdmin _helixAdmin;
     private String _instanceId;
 
-    //当前服务实例集合
-    private final PriorityQueue<InstanceTopicPartitionHolder> _currentServingInstance =
-            new PriorityQueue<InstanceTopicPartitionHolder>(1,
-                    InstanceTopicPartitionHolder.getComparator());
+  private final PriorityQueue<InstanceTopicPartitionHolder> _currentServingInstance;
 
-    // TODO: 2018/5/2 by zmyer
-    public HelixMirrorMakerManager(ControllerConf controllerConf) {
-        _controllerConf = controllerConf;
-        _helixZkURL = HelixUtils.getAbsoluteZkPathForHelix(_controllerConf.getZkStr());
-        _helixClusterName = _controllerConf.getHelixClusterName();
-        _instanceId = controllerConf.getInstanceId();
+  private final WorkloadInfoRetriever _workloadInfoRetriever;
+
+  private final OffsetMonitor _offsetMonitor;
+
+  private AutoRebalanceLiveInstanceChangeListener _autoRebalanceLiveInstanceChangeListener = null;
+
+  public HelixMirrorMakerManager(ControllerConf controllerConf) {
+    _controllerConf = controllerConf;
+    _helixZkURL = HelixUtils.getAbsoluteZkPathForHelix(_controllerConf.getZkStr());
+    _helixClusterName = _controllerConf.getHelixClusterName();
+    _instanceId = controllerConf.getInstanceId();
+    _workloadInfoRetriever = new WorkloadInfoRetriever(this);
+    _currentServingInstance = new PriorityQueue<>(1,
+        InstanceTopicPartitionHolder.getTotalWorkloadComparator(_workloadInfoRetriever, null));
+    _offsetMonitor = new OffsetMonitor(this, controllerConf);
+  }
+
+  public synchronized void start() {
+    LOGGER.info("Trying to start HelixMirrorMakerManager!");
+    _helixZkManager = HelixSetupUtils.setup(_helixClusterName, _helixZkURL, _instanceId);
+    _helixAdmin = _helixZkManager.getClusterManagmentTool();
+    LOGGER.info("Trying to register AutoRebalanceLiveInstanceChangeListener");
+    _autoRebalanceLiveInstanceChangeListener = new AutoRebalanceLiveInstanceChangeListener(this, _helixZkManager,
+        _controllerConf);
+    updateCurrentServingInstance();
+    _workloadInfoRetriever.start();
+    _offsetMonitor.start();
+
+    try {
+      _helixZkManager.addLiveInstanceChangeListener(_autoRebalanceLiveInstanceChangeListener);
+    } catch (Exception e) {
+      LOGGER.error("Failed to add LiveInstanceChangeListener");
     }
+  }
 
-    // TODO: 2018/5/2 by zmyer
-    public synchronized void start() {
-        LOGGER.info("Trying to start HelixMirrorMakerManager!");
-        //创建helix集群以及启动helix控制器
-        _helixZkManager = HelixSetupUtils.setup(_helixClusterName, _helixZkURL, _instanceId);
-        //获取helix集群管理工具对象
-        _helixAdmin = _helixZkManager.getClusterManagmentTool();
-        LOGGER.info("Trying to register AutoRebalanceLiveInstanceChangeListener");
-        //创建自动负载均衡监听器
-        AutoRebalanceLiveInstanceChangeListener autoRebalanceLiveInstanceChangeListener =
-                new AutoRebalanceLiveInstanceChangeListener(this, _helixZkManager,
-                        _controllerConf.getAutoRebalanceDelayInSeconds());
-        //更新当前服务实例
-        updateCurrentServingInstance();
-        try {
-            //注册自动负载均衡监听器
-            _helixZkManager.addLiveInstanceChangeListener(autoRebalanceLiveInstanceChangeListener);
-        } catch (Exception e) {
-            LOGGER.error("Failed to add LiveInstanceChangeListener");
+  public synchronized void stop() {
+    LOGGER.info("Trying to stop HelixMirrorMakerManager!");
+    if (_autoRebalanceLiveInstanceChangeListener != null) {
+      _autoRebalanceLiveInstanceChangeListener.stop();
+    }
+    _workloadInfoRetriever.stop();
+    try {
+      _offsetMonitor.stop();
+    } catch (InterruptedException e) {
+      LOGGER.info("Stopping kafkaMonitor got interrupted.");
+    }
+    _helixZkManager.disconnect();
+  }
+
+  public synchronized void updateCurrentServingInstance() {
+    synchronized (_currentServingInstance) {
+      Map<String, InstanceTopicPartitionHolder> instanceMap = new HashMap<>();
+      Map<String, Set<TopicPartition>> instanceToTopicPartitionsMap =
+          HelixUtils.getInstanceToTopicPartitionsMap(_helixZkManager);
+      List<String> liveInstances = HelixUtils.liveInstances(_helixZkManager);
+      Set<String> blacklistedInstances = new HashSet<>(getBlacklistedInstances());
+      for (String instanceName : liveInstances) {
+        if (!blacklistedInstances.contains(instanceName)) {
+          InstanceTopicPartitionHolder instance = new InstanceTopicPartitionHolder(instanceName);
+          instanceMap.put(instanceName, instance);
         }
-    }
-
-    // TODO: 2018/5/2 by zmyer
-    public synchronized void stop() {
-        LOGGER.info("Trying to stop HelixMirrorMakerManager!");
-        _helixZkManager.disconnect();
-    }
-
-    // TODO: 2018/5/2 by zmyer
-    public synchronized void updateCurrentServingInstance() {
-        synchronized (_currentServingInstance) {
-            Map<String, InstanceTopicPartitionHolder> instanceMap =
-                    new HashMap<String, InstanceTopicPartitionHolder>();
-            //从helix集群中读取所有的实例与对应的topic分区信息
-            Map<String, Set<TopicPartition>> instanceToTopicPartitionsMap =
-                    HelixUtils.getInstanceToTopicPartitionsMap(_helixZkManager);
-            //获取目前存活的实体集合
-            List<String> liveInstances = HelixUtils.liveInstances(_helixZkManager);
-            for (String instanceName : liveInstances) {
-                //创建实体与topic分区关系对象
-                InstanceTopicPartitionHolder instance = new InstanceTopicPartitionHolder(instanceName);
-                //将对应关系插入到关系表中
-                instanceMap.put(instanceName, instance);
-            }
-            for (String instanceName : instanceToTopicPartitionsMap.keySet()) {
-                if (instanceMap.containsKey(instanceName)) {
-                    //将对应关系插入到集合中
-                    instanceMap.get(instanceName)
-                            .addTopicPartitions(instanceToTopicPartitionsMap.get(instanceName));
-                }
-            }
-            //清空当前服务实体集合
-            _currentServingInstance.clear();
-            //将获取到的新的关系实体对象插入到集合中
-            _currentServingInstance.addAll(instanceMap.values());
+      }
+      for (String instanceName : instanceToTopicPartitionsMap.keySet()) {
+        if (instanceMap.containsKey(instanceName)) {
+          instanceMap.get(instanceName).addTopicPartitions(instanceToTopicPartitionsMap.get(instanceName));
         }
+      }
+      _currentServingInstance.clear();
+      int maxStandbyHosts = (_controllerConf.getMaxWorkingInstances() <= 0) ? 0
+          : instanceMap.size() - _controllerConf.getMaxWorkingInstances();
+      int standbyHosts = 0;
+      for (InstanceTopicPartitionHolder itph : instanceMap.values()) {
+        if (standbyHosts >= maxStandbyHosts || itph.getNumServingTopicPartitions() > 0) {
+          _currentServingInstance.add(itph);
+        } else {
+          // exclude it as a standby host
+          standbyHosts++;
+        }
+      }
     }
+  }
 
     public synchronized void addTopicToMirrorMaker(TopicPartition topicPartitionInfo) {
         this.addTopicToMirrorMaker(topicPartitionInfo.getTopic(), topicPartitionInfo.getPartition());
@@ -149,29 +170,27 @@ public class HelixMirrorMakerManager {
         }
     }
 
-    private synchronized void setEmptyResourceConfig(String topicName) {
-        _helixAdmin.setConfig(
-                new HelixConfigScopeBuilder(ConfigScopeProperty.RESOURCE).forCluster(_helixClusterName)
-                        .forResource(topicName).build(),
-                new HashMap<String, String>());
-    }
+  private synchronized void setEmptyResourceConfig(String topicName) {
+    _helixAdmin.setConfig(
+        new HelixConfigScopeBuilder(ConfigScopeProperty.RESOURCE).forCluster(_helixClusterName)
+            .forResource(topicName).build(),
+        new HashMap<>());
+  }
 
     // TODO: 2018/6/15 by zmyer
     public synchronized void expandTopicInMirrorMaker(TopicPartition topicPartitionInfo) {
         this.expandTopicInMirrorMaker(topicPartitionInfo.getTopic(), topicPartitionInfo.getPartition());
     }
 
-    // TODO: 2018/6/15 by zmyer
-    public synchronized void expandTopicInMirrorMaker(String topicName, int newNumTopicPartitions) {
-        updateCurrentServingInstance();
-        synchronized (_currentServingInstance) {
-            _helixAdmin.setResourceIdealState(_helixClusterName, topicName,
-                    IdealStateBuilder.expandCustomRebalanceModeIdealStateFor(
-                            _helixAdmin.getResourceIdealState(_helixClusterName, topicName), topicName,
-                            newNumTopicPartitions,
-                            _currentServingInstance));
-        }
+  public synchronized void expandTopicInMirrorMaker(String topicName, int newNumTopicPartitions) {
+    updateCurrentServingInstance();
+    synchronized (_currentServingInstance) {
+      _helixAdmin.setResourceIdealState(_helixClusterName, topicName,
+          IdealStateBuilder.expandCustomRebalanceModeIdealStateFor(
+              _helixAdmin.getResourceIdealState(_helixClusterName, topicName), topicName,
+              newNumTopicPartitions, _controllerConf, _currentServingInstance));
     }
+  }
 
     public synchronized void deleteTopicInMirrorMaker(String topicName) {
         _helixAdmin.dropResource(_helixClusterName, topicName);
@@ -193,25 +212,22 @@ public class HelixMirrorMakerManager {
         return _helixAdmin.getResourcesInCluster(_helixClusterName);
     }
 
-    // TODO: 2018/6/15 by zmyer
-    public void disableAutoBalancing() {
-        HelixConfigScope scope =
-                new HelixConfigScopeBuilder(ConfigScopeProperty.CLUSTER).forCluster(_helixClusterName)
-                        .build();
-        Map<String, String> properties = new HashMap<String, String>();
-        properties.put(AUTO_BALANCING, DISABLE);
-        _helixAdmin.setConfig(scope, properties);
-    }
+  public void disableAutoBalancing() {
+    HelixConfigScope scope = new HelixConfigScopeBuilder(ConfigScopeProperty.CLUSTER)
+        .forCluster(_helixClusterName).build();
+    Map<String, String> properties = new HashMap<>();
+    properties.put(AUTO_BALANCING, DISABLE);
+    _helixAdmin.setConfig(scope, properties);
+  }
 
-    // TODO: 2018/6/15 by zmyer
-    public void enableAutoBalancing() {
-        HelixConfigScope scope =
-                new HelixConfigScopeBuilder(ConfigScopeProperty.CLUSTER).forCluster(_helixClusterName)
-                        .build();
-        Map<String, String> properties = new HashMap<String, String>();
-        properties.put(AUTO_BALANCING, ENABLE);
-        _helixAdmin.setConfig(scope, properties);
-    }
+  public void enableAutoBalancing() {
+    HelixConfigScope scope =
+        new HelixConfigScopeBuilder(ConfigScopeProperty.CLUSTER).forCluster(_helixClusterName)
+            .build();
+    Map<String, String> properties = new HashMap<>();
+    properties.put(AUTO_BALANCING, ENABLE);
+    _helixAdmin.setConfig(scope, properties);
+  }
 
     public boolean isAutoBalancingEnabled() {
         HelixConfigScope scope =
@@ -235,12 +251,49 @@ public class HelixMirrorMakerManager {
         return liveInstances;
     }
 
-    public String getHelixZkURL() {
-        return _helixZkURL;
-    }
+  public List<String> getCurrentLiveInstanceNames() {
+    return HelixUtils.liveInstances(_helixZkManager);
+  }
+
+  public void blacklistInstance(String instanceName) {
+    _helixAdmin.addInstanceTag(_helixClusterName, instanceName, BLACKLIST_TAG);
+  }
+
+  public void whitelistInstance(String instanceName) {
+    _helixAdmin.removeInstanceTag(_helixClusterName, instanceName, BLACKLIST_TAG);
+  }
+
+  public List<String> getBlacklistedInstances() {
+    return _helixAdmin.getInstancesInClusterWithTag(_helixClusterName, BLACKLIST_TAG);
+  }
+
+  public String getHelixZkURL() {
+    return _helixZkURL;
+  }
 
     public String getHelixClusterName() {
         return _helixClusterName;
     }
+
+  public ControllerConf getControllerConf() {
+    return _controllerConf;
+  }
+
+  public WorkloadInfoRetriever getWorkloadInfoRetriever() {
+    return _workloadInfoRetriever;
+  }
+
+  public AutoRebalanceLiveInstanceChangeListener getRebalancer() {
+    return _autoRebalanceLiveInstanceChangeListener;
+  }
+
+  public PriorityQueue<InstanceTopicPartitionHolder> getCurrentServingInstance() {
+    updateCurrentServingInstance();
+    return _currentServingInstance;
+  }
+
+  public OffsetMonitor getOffsetMonitor() {
+    return _offsetMonitor;
+  }
 
 }

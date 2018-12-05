@@ -26,21 +26,27 @@ public class AdminRestletResource extends ServerResource {
                 .getAttributes().get(HelixMirrorMakerManager.class.toString());
     }
 
-    @Override
-    @Get
-    public Representation get() {
-        final String opt = (String) getRequest().getAttributes().get("opt");
-        if ("disable_autobalancing".equalsIgnoreCase(opt)) {
-            _helixMirrorMakerManager.disableAutoBalancing();
-            LOGGER.info("Disabled autobalancing!");
-            return new StringRepresentation("Disabled autobalancing!\n");
-        } else if ("enable_autobalancing".equalsIgnoreCase(opt)) {
-            _helixMirrorMakerManager.enableAutoBalancing();
-            LOGGER.info("Enabled autobalancing!");
-            return new StringRepresentation("Enabled autobalancing!\n");
-        }
-        LOGGER.info("No valid input!");
-        return new StringRepresentation("No valid input!\n");
+  @Override
+  @Get
+  public Representation get() {
+    final String opt = (String) getRequest().getAttributes().get("opt");
+    if ("disable_autobalancing".equalsIgnoreCase(opt)) {
+      _helixMirrorMakerManager.disableAutoBalancing();
+      LOGGER.info("Disabled autobalancing!");
+      return new StringRepresentation("Disabled autobalancing!\n");
+    } else if ("enable_autobalancing".equalsIgnoreCase(opt)) {
+      _helixMirrorMakerManager.enableAutoBalancing();
+      LOGGER.info("Enabled autobalancing!");
+      return new StringRepresentation("Enabled autobalancing!\n");
+    } else if ("autobalancing_status".equalsIgnoreCase(opt)) {
+      if (_helixMirrorMakerManager.isAutoBalancingEnabled()) {
+        return new StringRepresentation("enabled");
+      } else {
+        return new StringRepresentation("disabled");
+      }
     }
+    LOGGER.info("No valid input!");
+    return new StringRepresentation("No valid input!\n");
+  }
 
 }

@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.uber.stream.kafka.mirrormaker.controller.core;
+package com.uber.stream.kafka.mirrormaker.common.core;
 
 import org.apache.helix.HelixDefinedState;
 import org.apache.helix.ZNRecord;
@@ -41,14 +41,13 @@ public final class OnlineOfflineStateModel extends StateModelDefinition {
         super(generateConfigForOnlineOffline());
     }
 
-    /**
-     * Build OnlineOffline state model definition
-     */
-    // TODO: 2018/6/15 by zmyer
-    public static StateModelDefinition build() {
-        StateModelDefinition.Builder builder = new StateModelDefinition.Builder(name);
-        // init state
-        builder.initialState(States.OFFLINE.name());
+  /**
+   * Build OnlineOffline state model definition
+   */
+  public static StateModelDefinition build() {
+    Builder builder = new Builder(name);
+    // init state
+    builder.initialState(States.OFFLINE.name());
 
         // add states
         builder.addState(States.ONLINE.name(), 20);
